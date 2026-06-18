@@ -1,0 +1,698 @@
+import { describe, expect, it } from 'vitest';
+import { Sim } from '../src/sim/sim';
+import { applyAction, encodeObs, obsSize, ACTIONS } from '../src/sim/obs';
+import {
+  dist2d, MAX_LEVEL, xpForLevel, mobXpValue, rageConversion, rageFromDealing,
+  spellHitChance, meleeMissChance,
+} from '../src/sim/types';
+import { QUESTS, abilitiesKnownAt } from '../src/sim/data';
+import { terrainHeight } from '../src/sim/world';
+
+function makeSim(cls: 'warrior' | 'mage' | 'rogue' = 'warrior', seed = 42) {
+  return new Sim({ seed, playerClass: cls, autoEquip: true });
+}
+
+function nearestMob(sim: Sim, templateId?: string) {
+  const p = sim.player;
+  let best: any = null, bestD = Infinity;
+  for (const e of sim.entities.values()) {
+    if (e.kind !== 'mob' || e.dead) continue;
+    if (templateId && e.templateId !== templateId) continue;
+    const d = dist2d(p.pos, e.pos);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+function teleportTo(sim: Sim, x: number, z: number) {
+  const p = sim.player;
+  p.pos.x = x; p.pos.z = z;
+  p.pos.y = terrainHeight(x, z, sim.cfg.seed);
+  p.prevPos = { ...p.pos };
+}
+
+function facePlayerAt(sim: Sim, target: any) {
+  sim.player.facing = Math.atan2(target.pos.x - sim.player.pos.x, target.pos.z - sim.player.pos.z);
+}
+
+describe('classic formulas', () => {
+  it('rage conversion matches the vanilla constant', () => {
+    expect(rageConversion(1)).toBeCloseTo(0.0091 + 3.23 + 4.27, 4);
+    expect(rageConversion(10)).toBeCloseTo(0.91 + 32.3 + 4.27, 4);
+    // a 7.5-damage hit at level 1 generates ~7.5 rage
+    expect(rageFromDealing(7.51, 1)).toBeCloseTo(7.5, 1);
+  });
+
+  it('mob xp follows the 45+5L rule with gray cutoffs', () => {
+    expect(mobXpValue(1, 1)).toBe(50);
+    expect(mobXpValue(3, 1)).toBe(Math.round(60 * 1.1));
+    // gray: 5 levels below a level-7 player
+    expect(mobXpValue(2, 7)).toBe(0);
+    // not gray yet at level 6
+    expect(mobXpValue(2, 6)).toBeGreaterThan(0);
+    // ZD widens to 6 at player level 8
+    expect(mobXpValue(3, 8)).toBeGreaterThan(0);
+    expect(mobXpValue(2, 8)).toBe(0);
+  });
+
+  it('spell hit has the +3 level cliff', () => {
+    expect(spellHitChance(5, 5)).toBeCloseTo(0.96);
+    expect(spellHitChance(5, 7)).toBeCloseTo(0.94);
+    expect(spellHitChance(5, 8)).toBeCloseTo(0.83);
+  });
+
+  it('melee miss grows with level difference', () => {
+    expect(meleeMissChance(5, 5)).toBeCloseTo(0.05);
+    expect(meleeMissChance(5, 7)).toBeCloseTo(0.07);
+    expect(meleeMissChance(5, 8)).toBeGreaterThan(0.07);
+  });
+
+  it('abilities unlock at the right levels with ranks', () => {
+    const w1 = abilitiesKnownAt('warrior', 1).map((k) => k.def.id);
+    expect(w1).toEqual(['heroic_strike', 'battle_shout']);
+    const w10 = abilitiesKnownAt('warrior', 10);
+    expect(w10.map((k) => k.def.id)).toContain('overpower');
+    const hs10 = w10.find((k) => k.def.id === 'heroic_strike')!;
+    expect(hs10.rank).toBe(2);
+    const m8 = abilitiesKnownAt('mage', 8).map((k) => k.def.id);
+    expect(m8).toContain('polymorph');
+    expect(m8).not.toContain('frost_nova'); // level 10
+  });
+
+  it('ranks and new abilities carry the kit through the 10-20 band', () => {
+    // warrior: heroic strike rank 4 at 20; execute unlocks at 14, not before
+    expect(abilitiesKnownAt('warrior', 13).map((k) => k.def.id)).not.toContain('execute');
+    const w20 = abilitiesKnownAt('warrior', 20);
+    expect(w20.map((k) => k.def.id)).toContain('execute');
+    const hs20 = w20.find((k) => k.def.id === 'heroic_strike')!;
+    expect(hs20.rank).toBe(4);
+    expect(hs20.effects).toEqual([{ type: 'weaponDamage', bonus: 44 }]);
+    // shaman: lightning bolt keeps pace — rank 2 at 10, rank 3 at 14, rank 4 at 20
+    const lbAt = (lvl: number) => abilitiesKnownAt('shaman', lvl).find((k) => k.def.id === 'lightning_bolt')!;
+    expect(lbAt(10).rank).toBe(2);
+    const lb14 = lbAt(14);
+    expect(lb14.rank).toBe(3);
+    expect(lb14.cost).toBe(40);
+    expect(lb14.castTime).toBe(2.5);
+    const lb20 = lbAt(20);
+    expect(lb20.rank).toBe(4);
+    expect(lb20.cost).toBe(60);
+    expect(lb20.effects).toEqual([{ type: 'directDamage', min: 75, max: 85 }]);
+    // rogue: kidney shot is the finisherStun new ability
+    const ks = abilitiesKnownAt('rogue', 14).find((k) => k.def.id === 'kidney_shot')!;
+    expect(ks.effects).toEqual([{ type: 'finisherStun', base: 1, perCombo: 1 }]);
+  });
+});
+
+describe('world generation', () => {
+  it('spawns player, npcs, mobs and objects deterministically', () => {
+    const a = makeSim('warrior', 7);
+    const b = makeSim('warrior', 7);
+    expect(a.entities.size).toBe(b.entities.size);
+    expect(a.entities.size).toBeGreaterThan(60);
+    const mobsA = [...a.entities.values()].filter((e) => e.kind === 'mob');
+    const mobsB = [...b.entities.values()].filter((e) => e.kind === 'mob');
+    expect(mobsA.length).toBeGreaterThanOrEqual(60 - 10);
+    expect(mobsA.map((m) => [m.pos.x, m.pos.z, m.level])).toEqual(mobsB.map((m) => [m.pos.x, m.pos.z, m.level]));
+    const objects = [...a.entities.values()].filter((e) => e.kind === 'object');
+    expect(objects.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('terrain is deterministic, town is flat, lake is below water level', () => {
+    expect(terrainHeight(10, 10, 42)).toBe(terrainHeight(10, 10, 42));
+    expect(Math.abs(terrainHeight(0, 0, 42) - terrainHeight(8, 8, 42))).toBeLessThan(1.5);
+    expect(terrainHeight(-85, 80, 42)).toBeLessThan(-4.5);
+  });
+});
+
+describe('movement directions', () => {
+  // Camera sits behind the player looking along the facing direction
+  // (sin f, cos f); screen-right is therefore world (-cos f, sin f).
+  it('turn right decreases facing, turn left increases it', () => {
+    const sim = makeSim('warrior');
+    sim.player.facing = 0;
+    sim.moveInput.turnRight = true;
+    for (let i = 0; i < 10; i++) sim.tick();
+    expect(sim.player.facing).toBeLessThan(0);
+    sim.moveInput.turnRight = false;
+    sim.player.facing = 0;
+    sim.moveInput.turnLeft = true;
+    for (let i = 0; i < 10; i++) sim.tick();
+    expect(sim.player.facing).toBeGreaterThan(0);
+  });
+
+  it('strafing moves along the screen-right vector', () => {
+    const sim = makeSim('warrior');
+    teleportTo(sim, 0, -40);
+    sim.player.facing = 0; // facing +Z; screen-right is -X
+    const x0 = sim.player.pos.x;
+    sim.moveInput.strafeRight = true;
+    for (let i = 0; i < 20; i++) sim.tick();
+    expect(sim.player.pos.x).toBeLessThan(x0);
+    sim.moveInput.strafeRight = false;
+    sim.moveInput.strafeLeft = true;
+    const x1 = sim.player.pos.x;
+    for (let i = 0; i < 20; i++) sim.tick();
+    expect(sim.player.pos.x).toBeGreaterThan(x1);
+  });
+});
+
+describe('combat', () => {
+  it('player kills a wolf and gains xp + loot', () => {
+    const sim = makeSim('warrior');
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    sim.startAutoAttack();
+    facePlayerAt(sim, wolf);
+    let killed = false;
+    for (let i = 0; i < 20 * 120 && !killed; i++) {
+      const events = sim.tick();
+      facePlayerAt(sim, wolf);
+      if (events.some((e) => e.type === 'death' && e.entityId === wolf.id)) killed = true;
+    }
+    expect(killed).toBe(true);
+    expect(sim.counters.xpGained).toBeGreaterThan(0);
+    expect(wolf.lootable).toBe(true);
+    sim.lootCorpse(wolf.id);
+    expect(sim.copper).toBeGreaterThan(0);
+  });
+
+  it('warrior generates rage from combat (vanilla formula scale)', () => {
+    const sim = makeSim('warrior');
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    sim.startAutoAttack();
+    facePlayerAt(sim, wolf);
+    for (let i = 0; i < 20 * 10; i++) {
+      sim.tick();
+      if (sim.player.resource > 0) break;
+    }
+    expect(sim.player.resource).toBeGreaterThan(0);
+  });
+
+  it('mob can kill the player; release respawns at graveyard', () => {
+    const sim = makeSim('mage');
+    const boss = nearestMob(sim, 'gorrak');
+    teleportTo(sim, boss.pos.x + 2, boss.pos.z);
+    sim.player.hp = 30;
+    let died = false;
+    for (let i = 0; i < 20 * 60 && !died; i++) {
+      const events = sim.tick();
+      if (events.some((e) => e.type === 'playerDeath')) died = true;
+    }
+    expect(died).toBe(true);
+    sim.releaseSpirit();
+    expect(sim.player.dead).toBe(false);
+    expect(sim.player.hp).toBe(sim.player.maxHp);
+    expect(dist2d(sim.player.pos, { x: -12, y: 0, z: -14 })).toBeLessThan(2);
+  });
+
+  it('mobs leash, evade, and reset to full health', () => {
+    const sim = makeSim('warrior');
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    sim.startAutoAttack();
+    for (let i = 0; i < 40; i++) sim.tick();
+    expect(['chase', 'attack']).toContain(wolf.aiState);
+    wolf.hp = wolf.maxHp;
+    teleportTo(sim, wolf.spawnPos.x + 100, wolf.spawnPos.z + 100);
+    sim.stopAutoAttack();
+    let evaded = false;
+    for (let i = 0; i < 20 * 30 && !evaded; i++) {
+      sim.tick();
+      if (wolf.aiState === 'evade' || wolf.aiState === 'idle') evaded = true;
+    }
+    expect(evaded).toBe(true);
+    for (let i = 0; i < 20 * 30 && wolf.aiState !== 'idle'; i++) sim.tick();
+    expect(wolf.hp).toBe(wolf.maxHp);
+  });
+
+  it('dead mobs respawn', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', respawnSeconds: 2 });
+    const wolf = nearestMob(sim, 'forest_wolf');
+    wolf.hp = 1;
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    sim.startAutoAttack();
+    facePlayerAt(sim, wolf);
+    for (let i = 0; i < 20 * 30 && !wolf.dead; i++) sim.tick();
+    expect(wolf.dead).toBe(true);
+    sim.lootCorpse(wolf.id);
+    for (let i = 0; i < 20 * 10 && wolf.dead; i++) sim.tick();
+    expect(wolf.dead).toBe(false);
+  });
+
+  it('mage casts fireball with a cast time and applies its dot', () => {
+    const sim = makeSim('mage');
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 15, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    const hpBefore = wolf.hp;
+    sim.castAbility('fireball');
+    expect(sim.player.castingAbility).toBe('fireball');
+    for (let i = 0; i < 20 * 3; i++) sim.tick();
+    expect(wolf.hp).toBeLessThan(hpBefore);
+  });
+
+  it('polymorph sheeps a beast and breaks on damage', () => {
+    const sim = makeSim('mage');
+    sim.setPlayerLevel(8);
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 10, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    sim.castAbility('polymorph');
+    for (let i = 0; i < 20 * 2; i++) sim.tick();
+    expect(wolf.auras.some((a: any) => a.kind === 'polymorph')).toBe(true);
+    // direct damage breaks it
+    (sim as any).dealDamage(sim.player, wolf, 5, false, 'fire', 'test', 'hit');
+    expect(wolf.auras.some((a: any) => a.kind === 'polymorph')).toBe(false);
+  });
+
+  it('overpower requires a dodge proc', () => {
+    const sim = makeSim('warrior');
+    sim.setPlayerLevel(10);
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    sim.player.resource = 50;
+    sim.castAbility('overpower');
+    let events = sim.tick();
+    // without a dodge proc it errors
+    expect(sim.counters.damageDealt).toBe(0);
+    // simulate a dodge proc
+    sim.player.overpowerUntil = sim.time + 5;
+    sim.castAbility('overpower');
+    events = sim.tick();
+    expect(sim.counters.damageDealt).toBeGreaterThan(0);
+  });
+});
+
+describe('spell pushback', () => {
+  function castingMage(level = 1) {
+    const sim = makeSim('mage');
+    if (level > 1) sim.setPlayerLevel(level);
+    const wolf = nearestMob(sim, 'forest_wolf');
+    teleportTo(sim, wolf.pos.x + 15, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    return { sim, wolf };
+  }
+
+  it('a hit pushes a cast back instead of cancelling it', () => {
+    const { sim, wolf } = castingMage();
+    sim.castAbility('fireball');
+    expect(sim.player.castingAbility).toBe('fireball');
+    const remBefore = sim.player.castRemaining;
+    const totalBefore = sim.player.castTotal;
+    (sim as any).dealDamage(wolf, sim.player, 5, false, 'physical', null, 'hit');
+    expect(sim.player.castingAbility).toBe('fireball');
+    expect(sim.player.castRemaining).toBeCloseTo(remBefore + 0.5, 3);
+    expect(sim.player.castTotal).toBeCloseTo(totalBefore + 0.5, 3);
+  });
+
+  it('a pushed-back cast still completes and lands', () => {
+    const { sim, wolf } = castingMage();
+    sim.castAbility('fireball');
+    (sim as any).dealDamage(wolf, sim.player, 5, false, 'physical', null, 'hit');
+    const hpBefore = wolf.hp;
+    for (let i = 0; i < 20 * 8 && sim.player.castingAbility; i++) sim.tick();
+    expect(wolf.hp).toBeLessThan(hpBefore);
+  });
+
+  it('a hit shaves a quarter off a channel instead of cancelling it', () => {
+    const { sim, wolf } = castingMage(8);
+    sim.castAbility('arcane_missiles');
+    expect(sim.player.channeling).toBe(true);
+    const remBefore = sim.player.castRemaining;
+    const total = sim.player.castTotal;
+    (sim as any).dealDamage(wolf, sim.player, 5, false, 'physical', null, 'hit');
+    expect(sim.player.channeling).toBe(true);
+    expect(sim.player.castRemaining).toBeCloseTo(remBefore - total * 0.25, 3);
+  });
+
+  it('misses and fully absorbed hits do not push the cast back', () => {
+    const { sim, wolf } = castingMage();
+    sim.castAbility('fireball');
+    const remBefore = sim.player.castRemaining;
+    (sim as any).dealDamage(wolf, sim.player, 0, false, 'physical', null, 'miss');
+    expect(sim.player.castRemaining).toBe(remBefore);
+    expect(sim.player.castingAbility).toBe('fireball');
+  });
+});
+
+describe('rogue', () => {
+  it('regenerates energy on the 2-second tick', () => {
+    const sim = makeSim('rogue');
+    sim.player.resource = 0;
+    for (let i = 0; i < 41; i++) sim.tick();
+    expect(sim.player.resource).toBe(20);
+  });
+
+  it('builds combo points with sinister strike and spends them with eviscerate', () => {
+    const sim = makeSim('rogue');
+    const wolf = nearestMob(sim, 'forest_wolf');
+    wolf.level = 1;
+    teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+    sim.targetEntity(wolf.id);
+    facePlayerAt(sim, wolf);
+    let guard = 0;
+    while (sim.player.comboPoints < 2 && guard++ < 20 * 120 && !wolf.dead) {
+      if (sim.player.resource >= 45 && sim.player.gcdRemaining <= 0) sim.castAbility('sinister_strike');
+      sim.tick();
+      facePlayerAt(sim, wolf);
+    }
+    expect(sim.player.comboPoints).toBeGreaterThanOrEqual(2);
+    wolf.hp = wolf.maxHp;
+    sim.player.resource = 100;
+    const dealtBefore = sim.counters.damageDealt;
+    // wait out gcd
+    for (let i = 0; i < 30; i++) sim.tick();
+    facePlayerAt(sim, wolf);
+    sim.castAbility('eviscerate');
+    sim.tick();
+    expect(sim.counters.damageDealt).toBeGreaterThan(dealtBefore);
+    expect(sim.player.comboPoints).toBe(0);
+  });
+
+  it('rogue GCD is 1.0s', () => {
+    const sim = makeSim('rogue');
+    expect(sim.playerGcd).toBe(1.0);
+    expect(makeSim('warrior').playerGcd).toBe(1.5);
+  });
+});
+
+describe('food, drink, vendor', () => {
+  it('eating restores health over time while sitting and stands on move', () => {
+    const sim = makeSim('warrior');
+    sim.addItem('baked_bread', 1);
+    sim.player.hp = 20;
+    sim.player.combatTimer = 99;
+    sim.player.inCombat = false;
+    sim.useItem('baked_bread');
+    expect(sim.player.sitting).toBe(true);
+    expect(sim.countItem('baked_bread')).toBe(0);
+    const hpBefore = sim.player.hp;
+    for (let i = 0; i < 20 * 6; i++) sim.tick();
+    expect(sim.player.hp).toBeGreaterThan(hpBefore);
+    // moving stands up and stops the meal
+    sim.moveInput.forward = true;
+    sim.tick();
+    expect(sim.player.sitting).toBe(false);
+    expect(sim.player.eating).toBe(null);
+    expect(sim.player.drinking).toBe(null);
+  });
+
+  it('eats and drinks at the same time', () => {
+    const sim = makeSim('mage');
+    sim.addItem('baked_bread', 1);
+    sim.addItem('spring_water', 1);
+    sim.player.hp = 20;
+    sim.player.resource = 10;
+    sim.player.combatTimer = 99;
+    sim.player.inCombat = false;
+    sim.useItem('baked_bread');
+    sim.useItem('spring_water');
+    expect(sim.player.eating).not.toBe(null);
+    expect(sim.player.drinking).not.toBe(null);
+    expect(sim.player.sitting).toBe(true);
+    const hpBefore = sim.player.hp;
+    const manaBefore = sim.player.resource;
+    for (let i = 0; i < 20 * 6; i++) sim.tick();
+    expect(sim.player.hp).toBeGreaterThan(hpBefore);
+    expect(sim.player.resource).toBeGreaterThan(manaBefore);
+    // both still ticking after 6 of the 18 seconds
+    expect(sim.player.eating).not.toBe(null);
+    expect(sim.player.drinking).not.toBe(null);
+    // taking damage interrupts both
+    (sim as any).dealDamage(null, sim.player, 1, false, 'physical', 'Test', 'hit', true);
+    expect(sim.player.eating).toBe(null);
+    expect(sim.player.drinking).toBe(null);
+  });
+
+  it('mage conjures water and drinking restores mana', () => {
+    const sim = makeSim('mage');
+    sim.setPlayerLevel(4);
+    sim.castAbility('conjure_water');
+    for (let i = 0; i < 20 * 4; i++) sim.tick();
+    expect(sim.countItem('conjured_water')).toBe(2);
+    sim.player.resource = 10;
+    sim.player.combatTimer = 99;
+    sim.player.inCombat = false;
+    sim.tick();
+    sim.useItem('conjured_water');
+    const before = sim.player.resource;
+    for (let i = 0; i < 20 * 6; i++) sim.tick();
+    expect(sim.player.resource).toBeGreaterThan(before);
+  });
+
+  it('vendor buys and sells', () => {
+    const sim = makeSim('warrior');
+    const wilkes = [...sim.entities.values()].find((e) => e.templateId === 'trader_wilkes')!;
+    teleportTo(sim, wilkes.pos.x + 2, wilkes.pos.z);
+    sim.copper = 100;
+    sim.buyItem(wilkes.id, 'baked_bread');
+    expect(sim.countItem('baked_bread')).toBe(1);
+    expect(sim.copper).toBe(75);
+    sim.addItem('wolf_fang', 2);
+    sim.sellItem('wolf_fang');
+    expect(sim.copper).toBe(79);
+    expect(sim.countItem('wolf_fang')).toBe(1);
+  });
+});
+
+describe('leveling', () => {
+  it('levels up, heals to full, and learns new abilities', () => {
+    const sim = makeSim('warrior');
+    expect(sim.known.map((k) => k.def.id)).toEqual(['heroic_strike', 'battle_shout']);
+    const events: any[] = [];
+    (sim as any).grantXp(xpForLevel(1) + xpForLevel(2) + xpForLevel(3) + 10);
+    expect(sim.player.level).toBe(4);
+    expect(sim.player.hp).toBe(sim.player.maxHp);
+    expect(sim.known.map((k) => k.def.id)).toContain('charge');
+    expect(sim.known.map((k) => k.def.id)).toContain('rend');
+  });
+
+  it('caps at max level', () => {
+    const sim = makeSim('warrior');
+    (sim as any).grantXp(999999);
+    expect(sim.player.level).toBe(MAX_LEVEL);
+  });
+});
+
+describe('quests', () => {
+  it('full wolf quest flow: accept, kill 8, turn in', () => {
+    const sim = makeSim('warrior');
+    teleportTo(sim, 4, 4);
+    sim.interact();
+    expect(sim.questState('q_wolves')).toBe('active');
+    const wolves = [...sim.entities.values()].filter((e) => e.templateId === 'forest_wolf');
+    expect(wolves.length).toBeGreaterThanOrEqual(8);
+    for (let k = 0; k < 8; k++) {
+      const wolf = wolves[k];
+      wolf.hp = 1;
+      teleportTo(sim, wolf.pos.x + 2, wolf.pos.z);
+      sim.targetEntity(wolf.id);
+      sim.startAutoAttack();
+      for (let i = 0; i < 20 * 20 && !wolf.dead; i++) {
+        facePlayerAt(sim, wolf);
+        sim.tick();
+      }
+      expect(wolf.dead).toBe(true);
+    }
+    expect(sim.questState('q_wolves')).toBe('ready');
+    teleportTo(sim, 4, 4);
+    sim.interact();
+    expect(sim.questState('q_wolves')).toBe('done');
+    expect(sim.questState('q_bandits')).toBe('available');
+    expect(sim.questState('q_greyjaw')).toBe('available');
+  });
+
+  it('collect quest tracks inventory and consumes items on turn-in', () => {
+    const sim = makeSim('warrior');
+    teleportTo(sim, -7, 1);
+    sim.interact();
+    expect(sim.questState('q_boars')).toBe('active');
+    sim.addItem('boar_hide', 5);
+    expect(sim.questState('q_boars')).toBe('ready');
+    sim.interact();
+    expect(sim.questState('q_boars')).toBe('done');
+    expect(sim.countItem('boar_hide')).toBe(0);
+  });
+
+  it('ground objects can only be picked up with the quest active', () => {
+    const sim = makeSim('warrior');
+    sim.player.level = 3;
+    const crate = [...sim.entities.values()].find((e) => e.kind === 'object')!;
+    teleportTo(sim, crate.pos.x + 1, crate.pos.z);
+    sim.pickUpObject(crate.id);
+    expect(sim.countItem('supply_crate')).toBe(0); // not on quest -> nailed shut
+    sim.questLog.set('q_supplies', { questId: 'q_supplies', counts: [0], state: 'active' });
+    sim.pickUpObject(crate.id);
+    expect(sim.countItem('supply_crate')).toBe(1);
+    expect(crate.lootable).toBe(false);
+    // respawns
+    for (let i = 0; i < 20 * 31; i++) sim.tick();
+    expect(crate.lootable).toBe(true);
+  });
+
+  it('quest reward weapon is granted and auto-equipped', () => {
+    const sim = makeSim('warrior');
+    teleportTo(sim, 4, 4);
+    sim.interact();
+    const qp = sim.questLog.get('q_wolves')!;
+    qp.counts[0] = 8;
+    (sim as any).checkQuestReady(qp, (sim as any).primary);
+    sim.interact(); // turn in wolves
+    // accept bandits specifically
+    sim.acceptQuest('q_bandits');
+    const qb = sim.questLog.get('q_bandits')!;
+    qb.counts[0] = 10;
+    (sim as any).checkQuestReady(qb, (sim as any).primary);
+    sim.turnInQuest('q_bandits');
+    expect(sim.equipment.mainhand).toBe('redbrook_blade');
+  });
+});
+
+describe('RL interface', () => {
+  it('observation has documented size and stays in sane bounds', () => {
+    const sim = makeSim('warrior');
+    const obs = encodeObs(sim);
+    expect(obs.length).toBe(obsSize());
+    for (const v of obs) {
+      expect(Number.isFinite(v)).toBe(true);
+      expect(Math.abs(v)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('actions execute without error and sim stays finite', () => {
+    const sim = makeSim('rogue', 123);
+    for (let step = 0; step < 600; step++) {
+      applyAction(sim, step % ACTIONS.length);
+      for (let t = 0; t < 4; t++) sim.tick();
+      const obs = encodeObs(sim);
+      for (const v of obs) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it('same seed + same actions => identical trajectories', () => {
+    const run = () => {
+      const sim = makeSim('warrior', 999);
+      const trace: number[] = [];
+      for (let step = 0; step < 300; step++) {
+        applyAction(sim, (step * 7) % ACTIONS.length);
+        for (let t = 0; t < 4; t++) sim.tick();
+        const o = encodeObs(sim);
+        trace.push(o[0], o[4], o[5], sim.counters.damageDealt, sim.counters.xpGained);
+      }
+      return trace;
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('farm persistence', () => {
+  it('rebinds saved farms to the reconnecting player and removes logout ghosts', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', noPlayer: true });
+    const firstPid = sim.addPlayer('warrior', 'Farmer');
+    const first = sim.entities.get(firstPid)!;
+    first.pos.x = 50;
+    first.pos.z = 50;
+    first.prevPos = { ...first.pos };
+    sim.farms.push({ id: 'farm_reconnect', ownerPid: firstPid, x: 50, z: 50, facing: 0 });
+
+    const state = sim.serializeCharacter(firstPid)!;
+    expect(state.farms).toEqual([{ id: 'farm_reconnect', ownerPid: undefined, x: 50, z: 50, facing: 0 }]);
+
+    sim.removePlayer(firstPid);
+    expect(sim.farms).toEqual([]);
+
+    const secondPid = sim.addPlayer('warrior', 'Farmer', { state });
+    expect(sim.farms).toEqual([{ id: 'farm_reconnect', ownerPid: secondPid, x: 50, z: 50, facing: 0 }]);
+
+    sim.pickUpFarm('farm_reconnect', secondPid);
+    expect(sim.farms).toEqual([]);
+    expect(sim.countItem('farmstead_deed', secondPid)).toBe(1);
+  });
+
+  it('persists stable account and character farm owners for online characters', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', noPlayer: true });
+    const pid = sim.addPlayer('warrior', 'Farmer', { accountId: 77, characterId: 1234 });
+    sim.farms.push({ id: 'farm_stable', ownerPid: pid, ownerAccountId: 77, ownerCharacterId: 1234, x: 40, z: 42, facing: 1 });
+
+    const state = sim.serializeCharacter(pid)!;
+
+    expect(state.farms).toEqual([{ id: 'farm_stable', ownerPid: undefined, ownerAccountId: 77, ownerCharacterId: 1234, x: 40, z: 42, facing: 1 }]);
+  });
+
+  it('claims an existing saved farm row instead of leaving an old-owner duplicate', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', noPlayer: true });
+    sim.farms.push({ id: 'farm_reconnect', ownerPid: 9999, ownerAccountId: 77, ownerCharacterId: 1234, x: 50, z: 50, facing: 0 });
+
+    const pid = sim.addPlayer('warrior', 'Farmer', {
+      accountId: 77,
+      characterId: 1234,
+      state: {
+        level: 1,
+        xp: 0,
+        copper: 0,
+        hp: 100,
+        resource: 0,
+        pos: { x: 50, z: 50 },
+        facing: 0,
+        equipment: {},
+        inventory: [],
+        farms: [{ id: 'farm_reconnect', ownerAccountId: 77, ownerCharacterId: 1234, x: 50, z: 50, facing: 0 }],
+        questLog: [],
+        questsDone: [],
+      },
+    });
+
+    expect(sim.farms).toEqual([{ id: 'farm_reconnect', ownerPid: pid, ownerAccountId: 77, ownerCharacterId: 1234, x: 50, z: 50, facing: 0 }]);
+    sim.pickUpFarm('farm_reconnect', pid);
+    expect(sim.countItem('farmstead_deed', pid)).toBe(1);
+  });
+
+  it('uses character ownership first so another character on the same account cannot pick it up', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', noPlayer: true });
+    const owner = sim.addPlayer('warrior', 'Owner', { accountId: 77, characterId: 1001 });
+    const other = sim.addPlayer('warrior', 'Alt', { accountId: 77, characterId: 1002 });
+    const ownerEntity = sim.entities.get(owner)!;
+    const otherEntity = sim.entities.get(other)!;
+    ownerEntity.pos.x = 50; ownerEntity.pos.z = 50; ownerEntity.prevPos = { ...ownerEntity.pos };
+    otherEntity.pos.x = 50; otherEntity.pos.z = 50; otherEntity.prevPos = { ...otherEntity.pos };
+    sim.farms.push({ id: 'farm_owner', ownerPid: owner, ownerAccountId: 77, ownerCharacterId: 1001, x: 50, z: 50, facing: 0 });
+
+    sim.pickUpFarm('farm_owner', other);
+    expect(sim.farms).toHaveLength(1);
+    expect(sim.countItem('farmstead_deed', other)).toBe(0);
+
+    sim.pickUpFarm('farm_owner', owner);
+    expect(sim.farms).toEqual([]);
+    expect(sim.countItem('farmstead_deed', owner)).toBe(1);
+  });
+});
+
+describe('gm characters', () => {
+  it('gm flag makes a player invulnerable through every damage path', () => {
+    const sim = makeSim('warrior');
+    sim.setGm();
+    const before = sim.player.hp;
+    (sim as any).dealDamage(null, sim.player, 9999, false, 'physical', 'Test', 'hit', true);
+    expect(sim.player.hp).toBe(before);
+    expect(sim.player.dead).toBe(false);
+  });
+
+  it('non-gm players still take damage (control)', () => {
+    const sim = makeSim('warrior');
+    const before = sim.player.hp;
+    (sim as any).dealDamage(null, sim.player, 5, false, 'physical', 'Test', 'hit', true);
+    expect(sim.player.hp).toBe(before - 5);
+  });
+});

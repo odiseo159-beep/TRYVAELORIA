@@ -1,0 +1,162 @@
+import type { Entity, EquipSlot, FarmPlot, InvSlot, MoveInput, PlayerClass, QuestProgress, QuestState, ResourceType } from './sim/types';
+import type { ResolvedAbility } from './sim/sim';
+
+export interface PartyMemberInfo {
+  pid: number;
+  name: string;
+  cls: PlayerClass;
+  level: number;
+  hp: number;
+  mhp: number;
+  res: number;
+  mres: number;
+  rtype: ResourceType | null;
+  x: number;
+  z: number;
+  dead: number;
+}
+
+export interface PartyInfo {
+  leader: number;
+  members: PartyMemberInfo[];
+}
+
+export interface TradeOffer {
+  items: InvSlot[];
+  copper: number;
+}
+
+export interface TradeInfo {
+  otherPid: number;
+  otherName: string;
+  myOffer: TradeOffer;
+  theirOffer: TradeOffer;
+  myAccepted: boolean;
+  theirAccepted: boolean;
+}
+
+export interface DuelInfo {
+  otherPid: number;
+  otherName: string;
+  state: 'countdown' | 'active';
+}
+
+// Persistent social state, mirrored from the server's SocialService. Mirrors
+// server/social.ts shapes; kept here so the HUD has no server-side imports.
+export type PresenceStatus = 'online' | 'combat' | 'dungeon' | 'dead';
+export type GuildRank = 'leader' | 'officer' | 'member';
+
+export interface FriendInfo {
+  id: number;
+  name: string;
+  cls: string;
+  level: number;
+  realm: string;
+  online: boolean;
+  zone?: string;
+  status?: PresenceStatus;
+}
+
+export interface GuildMemberInfo extends FriendInfo {
+  rank: GuildRank;
+}
+
+export interface GuildInfo {
+  id: number;
+  name: string;
+  rank: GuildRank;
+  members: GuildMemberInfo[];
+}
+
+export interface SocialInfo {
+  friends: FriendInfo[];
+  blocks: { id: number; name: string }[];
+  guild: GuildInfo | null;
+}
+
+export interface CharacterSearchResult {
+  name: string;
+  cls: string;
+  level: number;
+}
+
+// The surface the renderer + HUD need from a game world. The offline `Sim`
+// satisfies this structurally; the online `ClientWorld` implements it by
+// mirroring server snapshots and sending commands over the socket.
+export interface IWorld {
+  cfg: { seed: number; playerClass: PlayerClass };
+  entities: Map<number, Entity>;
+  playerId: number;
+  player: Entity;
+  moveInput: MoveInput;
+  inventory: InvSlot[];
+  equipment: Partial<Record<EquipSlot, string>>;
+  copper: number;
+  xp: number;
+  known: ResolvedAbility[];
+  questLog: Map<string, QuestProgress>;
+  questsDone: Set<string>;
+  questState(questId: string): QuestState;
+  castAbility(abilityId: string): void;
+  castAbilityBySlot(slot: number): void;
+  targetEntity(id: number | null): void;
+  tabTarget(): void;
+  startAutoAttack(): void;
+  stopAutoAttack(): void;
+  interact(): void;
+  chopNearestTree(): boolean;
+  fishNearestWater(): boolean;
+  choppedTrees: Map<string, number>;
+  farms: FarmPlot[];
+  lootCorpse(id: number): void;
+  pickUpObject(id: number): void;
+  pickUpFarm(id: string): void;
+  acceptQuest(questId: string): void;
+  turnInQuest(questId: string): void;
+  abandonQuest(questId: string): void;
+  equipItem(itemId: string): void;
+  useItem(itemId: string): void;
+  buyItem(npcId: number, itemId: string): void;
+  sellItem(itemId: string): void;
+  releaseSpirit(): void;
+  chat(text: string): void;
+  // social systems
+  partyInfo: PartyInfo | null;
+  tradeInfo: TradeInfo | null;
+  duelInfo: DuelInfo | null;
+  partyInvite(targetPid: number): void;
+  partyAccept(): void;
+  partyDecline(): void;
+  partyLeave(): void;
+  partyKick(targetPid: number): void;
+  tradeRequest(targetPid: number): void;
+  tradeAccept(): void;
+  tradeSetOffer(items: InvSlot[], copper: number): void;
+  tradeConfirm(): void;
+  tradeCancel(): void;
+  duelRequest(targetPid: number): void;
+  duelAccept(): void;
+  duelDecline(): void;
+  // the realm (world/shard) this character lives on; '' in offline play
+  realm: string;
+  // persistent social: friends, ignore/block, guilds (online play only)
+  socialInfo: SocialInfo | null;
+  friendAdd(name: string): void;
+  friendRemove(name: string): void;
+  blockAdd(name: string): void;
+  blockRemove(name: string): void;
+  guildCreate(name: string): void;
+  guildInvite(name: string): void;
+  guildAccept(): void;
+  guildDecline(): void;
+  guildLeave(): void;
+  guildKick(name: string): void;
+  guildPromote(name: string): void;
+  guildDemote(name: string): void;
+  guildTransfer(name: string): void;
+  guildDisband(): void;
+  // realm-scoped username typeahead for friend/ignore/guild search
+  searchCharacters(query: string): Promise<CharacterSearchResult[]>;
+  enterDungeon(dungeonId: string): void;
+  leaveDungeon(): void;
+}
