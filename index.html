@@ -735,6 +735,19 @@
     background: #020304;
   }
   #mode-select[hidden] { display: none !important; }
+  .mode-top-logo {
+    position: absolute;
+    z-index: 6;
+    left: 50%;
+    top: clamp(14px, 3vh, 30px);
+    width: clamp(110px, 14vw, 190px);
+    height: auto;
+    transform: translateX(-50%);
+    pointer-events: none;
+    user-select: none;
+    opacity: .96;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,.85)) drop-shadow(0 0 16px rgba(216,189,118,.22));
+  }
   #mode-select .mode-row {
     position: absolute;
     inset: 0;
@@ -939,6 +952,7 @@
     .mode-card p { font-size: 12px; letter-spacing: .14em; margin-top: 8px; }
     .mode-center-line { left: 0; right: 0; top: 50%; width: 100%; height: 2px; transform: translateY(-50%); }
     .mode-center-crest { width: 42px; height: 42px; }
+    .mode-top-logo { width: min(34vw, 120px); top: 8px; }
     .mode-footer { display: none; }
   }
   .auth-panel { width: 360px; padding: 16px; }
@@ -2359,6 +2373,7 @@
     <div id="title-logo" role="img" aria-label="VAELORIA">VAELORIA</div>
 
     <div id="mode-select">
+      <img class="mode-top-logo" src="/images/vaeloria-logo.png" alt="VAELORIA" />
       <div class="mode-row" aria-label="Choose your game mode">
         <div class="mode-card mode-online" id="btn-online" role="button" tabindex="0" aria-label="Online Mode: server characters, shared realm, blockchain and player market">
           <div class="mode-content">
