@@ -1,6 +1,7 @@
 import { generateDecorations } from './world';
 import { DUNGEON_X_THRESHOLD, INSTANCE_SLOT_COUNT, PROPS, dungeonAt, instanceOrigin } from './data';
-import { CRYPT_LAYOUT, SANCTUM_LAYOUT, layoutColliders } from './dungeon_layout';
+import { CRYPT_LAYOUT, SANCTUM_LAYOUT, TUTORIAL_LAYOUT, layoutColliders } from './dungeon_layout';
+import { TUTORIAL_TREE } from './content/tutorial_resources';
 
 // Static world collision. Prop placement comes from the per-zone content
 // modules (merged into PROPS by sim/data.ts): the renderer builds its meshes
@@ -129,11 +130,16 @@ function staticWorldColliders(seed: number): Collider[] {
 // (sim/dungeon_layout.ts), so render geometry and collision can no longer
 // drift apart. The boss dais is walkable and deliberately has no collider.
 const CRYPT_COLLIDERS: Collider[] = layoutColliders(CRYPT_LAYOUT);
+const TUTORIAL_COLLIDERS: Collider[] = [
+  ...layoutColliders(TUTORIAL_LAYOUT),
+  { type: 'circle', x: TUTORIAL_TREE.x, z: TUTORIAL_TREE.z, r: TUTORIAL_TREE.r },
+];
 const SANCTUM_COLLIDERS: Collider[] = layoutColliders(SANCTUM_LAYOUT);
 
 // Interior collider sets keyed by DungeonDef.interior.
 const INTERIOR_COLLIDERS: Record<string, Collider[]> = {
   crypt: CRYPT_COLLIDERS,
+  tutorial: TUTORIAL_COLLIDERS,
   sanctum: SANCTUM_COLLIDERS,
 };
 

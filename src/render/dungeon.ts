@@ -17,9 +17,10 @@ import { registerPreload } from './assets/preload';
 import { radialGlowTexture } from './textures';
 import { instanceOrigin } from '../sim/data';
 import {
-  CRYPT_LAYOUT, SANCTUM_LAYOUT, DUNGEON_WALL_X, TOMB_HD,
+  CRYPT_LAYOUT, SANCTUM_LAYOUT, TUTORIAL_LAYOUT, DUNGEON_WALL_X, TOMB_HD,
   DungeonLayout, GridPoint, WallStub,
 } from '../sim/dungeon_layout';
+import { TUTORIAL_LAKE, TUTORIAL_TREE, TUTORIAL_TREE_KEY } from '../sim/content/tutorial_resources';
 
 const FLAME_EMISSIVE_HIGH = 2.2;
 // dungeon torch point lights: pumped + hung low so warm pools break up the
@@ -211,6 +212,7 @@ export class DungeonInteriors {
   private glowDecalMats = new Map<number, THREE.MeshBasicMaterial>();
   private flameGeo: THREE.BufferGeometry | null = null;
   private packMats = new Map<Pack, THREE.Material>();
+  private tutorialTrees = new Map<string, THREE.Group>();
 
   constructor(
     private scene: THREE.Scene,
@@ -220,7 +222,7 @@ export class DungeonInteriors {
   ) {}
 
   buildInterior(interior: string, ox: number, oz: number): void {
-    const layout = interior === 'sanctum' ? SANCTUM_LAYOUT : CRYPT_LAYOUT;
+    const layout = interior === 'sanctum' ? SANCTUM_LAYOUT : interior === 'tutorial' ? TUTORIAL_LAYOUT : CRYPT_LAYOUT;
     const variant = this.variantFor(interior, ox);
     const group = new THREE.Group();
     const p = new Placements();
@@ -233,10 +235,15 @@ export class DungeonInteriors {
     this.placeDais(group, p, layout, variant);
     this.placeAisleClutter(p, layout, variant);
     this.placeWallDressing(p, layout, variant);
+    if (interior === 'tutorial') this.placeTutorialTrainingFeatures(group, p, ox, oz);
 
     this.emit(group, p);
     group.position.set(ox, 0, oz);
     this.scene.add(group);
+  }
+
+  updateTutorialTrees(choppedTrees: Set<string>): void {
+    for (const [key, tree] of this.tutorialTrees) tree.visible = !choppedTrees.has(key);
   }
 
   // Hollow Crypt and Sunken Bastion share interior 'crypt'; the origin x-band
@@ -465,6 +472,45 @@ export class DungeonInteriors {
     glow.scale.setScalar(scale);
     glow.renderOrder = 1; // after the floor it floats over
     group.add(glow);
+  }
+
+  private placeTutorialTrainingFeatures(group: THREE.Group, p: Placements, ox: number, oz: number): void {
+    const waterGeo = new THREE.CircleGeometry(TUTORIAL_LAKE.r, 40).rotateX(-Math.PI / 2);
+    const water = new THREE.Mesh(waterGeo, new THREE.MeshBasicMaterial({
+      color: 0x2f8fe8,
+      transparent: true,
+      opacity: 0.74,
+      depthWrite: false,
+    }));
+    water.position.set(TUTORIAL_LAKE.x, 0.09, TUTORIAL_LAKE.z);
+    water.renderOrder = 2;
+    group.add(water);
+
+    const shoreGeo = new THREE.RingGeometry(TUTORIAL_LAKE.r * 0.92, TUTORIAL_LAKE.r * 1.12, 40).rotateX(-Math.PI / 2);
+    const shore = new THREE.Mesh(shoreGeo, new THREE.MeshLambertMaterial({ color: 0x67503a }));
+    shore.position.set(TUTORIAL_LAKE.x, 0.08, TUTORIAL_LAKE.z);
+    group.add(shore);
+    this.addTorchGlow(group, TUTORIAL_LAKE.x, TUTORIAL_LAKE.z, 0x42b8ff, 0.12, 1.1);
+
+    const treeGroup = new THREE.Group();
+    treeGroup.position.set(TUTORIAL_TREE.x, 0, TUTORIAL_TREE.z);
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.44, 3.2, 8),
+      new THREE.MeshLambertMaterial({ color: 0x6b4325 }),
+    );
+    trunk.position.set(0, 1.6, 0);
+    trunk.castShadow = true;
+    treeGroup.add(trunk);
+    const leaves = new THREE.Mesh(
+      new THREE.ConeGeometry(1.7, 3.1, 9),
+      new THREE.MeshLambertMaterial({ color: 0x2f8a3f }),
+    );
+    leaves.position.set(0, 3.7, 0);
+    leaves.castShadow = true;
+    treeGroup.add(leaves);
+    group.add(treeGroup);
+    this.tutorialTrees.set(`${TUTORIAL_TREE_KEY}:${Math.round(ox)}:${Math.round(oz)}`, treeGroup);
+    p.add('floor_dirt_large_rocky', TUTORIAL_TREE.x, FLOOR_Y + 0.02, TUTORIAL_TREE.z, 0.3, 1.15);
   }
 
   // Wall-side obstacles at +-19 (OBB 2.2 x 4.2): sarcophagi in the crypt and

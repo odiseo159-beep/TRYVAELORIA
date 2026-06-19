@@ -47,6 +47,8 @@ interface PropAssetDef {
   kit: string;
   /** pre-rotation (radians) baked into geometry so the door/opening faces +z */
   yaw?: number;
+  /** keep only parts whose material or mesh name matches */
+  keep?: RegExp;
   /** drop parts whose material or mesh name matches (e.g. the market cart's awning) */
   strip?: RegExp;
 }
@@ -58,6 +60,15 @@ const PROP_ASSET_DEFS: Record<string, PropAssetDef> = {
   // Strip the huge pale-green Sketchfab base plane plus embedded NPC/animal
   // meshes from the source diorama; we use our own live NPCs instead.
   castleTown: { url: '/models/props/castle_town.glb', kit: 'castleTown', strip: /^(65\.002|Object_339|CharTxt_MAT|Animals_MAT)$/ },
+  farmHousePurple: { url: '/models/props/custom/village_town_assets.glb', kit: 'customVillage', keep: /^House_Purple(?:[._]|$)/ },
+  farmHouseBlue: { url: '/models/props/custom/village_town_assets.glb', kit: 'customVillage', keep: /^House_Blue(?:[._]|$)/ },
+  farmHouseRed: { url: '/models/props/custom/village_town_assets.glb', kit: 'customVillage', keep: /^House_Red(?:[._]|$)/ },
+  farmHouseTwoStory: { url: '/models/props/custom/village_town_assets.glb', kit: 'customVillage', keep: /^House_2Story_Purple(?:[._]|$)/ },
+  farmBarn: { url: '/models/props/custom/village_town_assets.glb', kit: 'customVillage', keep: /^Barn(?:[._]|$)/ },
+  magicHouse: { url: '/models/props/custom/magic_house.glb', kit: 'magicHouse', strip: /^(ground)$/i },
+  vikingButcher: { url: '/models/props/custom/viking_butcher.glb', kit: 'vikingButcher', keep: /^M_Building$/ },
+  mushroomHouse: { url: '/models/props/custom/mushroom_house.glb', kit: 'mushroomHouse', strip: /^(Rock|rock2)$/i },
+  fairyHouse: { url: '/models/props/custom/fairy_house_1.glb', kit: 'fairyHouse', strip: /^(Green Gradeint|Rocks|Rock|Material\.Tree brown)/i },
   blacksmith: { url: '/models/props/blacksmith.glb', kit: 'village' },
   inn: { url: '/models/props/inn.glb', kit: 'village' },
   bellTower: { url: '/models/props/bell_tower.glb', kit: 'village' },
@@ -206,7 +217,10 @@ function propAsset(key: PropKey): PropAsset {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     const srcMat = mesh.material as THREE.Material;
-    if (def.strip?.test(srcMat.name) || def.strip?.test(mesh.name)) return;
+    const sourceNames = [srcMat.name, mesh.name, o.name];
+    for (let p = o.parent; p; p = p.parent) sourceNames.push(p.name ?? '');
+    if (def.keep && !sourceNames.some((name) => def.keep?.test(name))) return;
+    if (def.strip && sourceNames.some((name) => def.strip?.test(name))) return;
     const src = mesh.geometry;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', toFloatAttr(src.getAttribute('position'), 3));
@@ -341,8 +355,26 @@ export function buildProps(seed: number): PropsResult {
   }
 
   // ---- buildings: village houses / inn / composed chapel ------------------
-  const housePool: PropKey[] = ['house1', 'house2', 'blacksmith'];
-  const houseHeight: Record<string, number> = { house1: 8.0, house2: 7.6, blacksmith: 6.6, inn: 7.6 };
+  const housePool: PropKey[] = [
+    'magicHouse',
+    'vikingButcher',
+    'farmHouseRed',
+    'farmHousePurple',
+    'farmHouseBlue',
+    'farmHouseTwoStory',
+    'fairyHouse',
+    'mushroomHouse',
+  ];
+  const houseHeight: Partial<Record<PropKey, number>> = {
+    magicHouse: 6.4,
+    vikingButcher: 5.9,
+    farmHouseRed: 6.0,
+    farmHousePurple: 6.0,
+    farmHouseBlue: 6.0,
+    farmHouseTwoStory: 7.4,
+    fairyHouse: 5.6,
+    mushroomHouse: 5.4,
+  };
 
   for (const b of PROPS.buildings) {
     const key = b.x * 13.7 + b.z * 3.1;
@@ -366,10 +398,11 @@ export function buildProps(seed: number): PropsResult {
       group.add(shadowed(g));
       continue;
     }
-    const asset: PropKey = b.kind === 'inn' ? 'inn' : housePool[Math.floor(keyRand(key, 3) * 0.999 * housePool.length)];
+    const asset: PropKey = housePool[Math.floor(keyRand(key, b.kind === 'inn' ? 8 : 3) * 0.999 * housePool.length)];
     const a = propAsset(asset);
     const g = new THREE.Group();
-    addParts(g, asset, { scale: [b.w / a.size.x, houseHeight[asset] / a.size.y, b.d / a.size.z] });
+    const height = (houseHeight[asset] ?? 6.0) * (b.kind === 'inn' ? 1.12 : 1.0);
+    addParts(g, asset, { scale: [b.w / a.size.x, height / a.size.y, b.d / a.size.z] });
     g.position.set(b.x, y - 0.12, b.z);
     g.rotation.y = b.rot;
     group.add(shadowed(g));

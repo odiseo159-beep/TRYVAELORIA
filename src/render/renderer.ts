@@ -7,7 +7,7 @@ import {
   dungeonAt, instanceOrigin, INSTANCE_SLOT_COUNT,
 } from '../sim/data';
 import type { BiomeId } from '../sim/types';
-import { AnimState, CharacterVisual, createCharacterVisual } from './characters';
+import { AnimState, CharacterVisual, createCharacterVisual, HeldWeaponTransform } from './characters';
 import { LocoTrack, newLocoTrack, updateLocomotion } from './locomotion';
 import { buildProps } from './props';
 import { plankTexture, sparkleTexture } from './textures';
@@ -27,6 +27,7 @@ import { shouldRenderStealthGhost } from './stealth';
 import { loadGltf } from './assets/loader';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 const NAMEPLATE_RANGE = 55;
 // Entities further than this from the player are hidden entirely: their rigs
@@ -58,6 +59,30 @@ const ENV_INTENSITY = 0.5;
 // dungeon interiors: kill the daylight so torchlight carries the scene
 // (env at 0.15 still lit rigs sky-blue against the pitch-dark crypt)
 const DUNGEON_SUN_INTENSITY = 0.3;
+const CRAFTING_TABLE_MODEL_URL = '/models/props/custom/crafting_table.glb';
+const CRAFTING_TABLE_TARGET_SIZE = 2.25;
+
+const GEAR_BASE = '/models/gear/armaduras-etc/fbx/';
+const HELD_WEAPONS: Record<string, { file: string; transform: HeldWeaponTransform }> = {
+  crafted_warrior_big_sword: { file: 'Sword_big.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_warrior_big_sword: { file: 'Sword_big_Golden.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_paladin_hammer: { file: 'Hammer_Double.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_paladin_hammer: { file: 'Hammer_Double_Golden.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_hunter_bow: { file: 'Bow_Wooden.fbx', transform: { scale: 0.012, px: -0.050, py: 0.085, pz: -0.045, rx: -0.15, ry: Math.PI, rz: 0 } },
+  golden_hunter_bow: { file: 'Bow_Golden.fbx', transform: { scale: 0.012, px: -0.050, py: 0.085, pz: -0.045, rx: -0.15, ry: Math.PI, rz: 0 } },
+  crafted_rogue_dagger: { file: 'Dagger.fbx', transform: { scale: 0.016, px: -0.05, py: 0.08, pz: -0.04, rx: Math.PI, ry: 0, rz: 1.57 } },
+  golden_rogue_dagger: { file: 'Dagger_Golden.fbx', transform: { scale: 0.016, px: -0.05, py: 0.08, pz: -0.04, rx: Math.PI, ry: 0, rz: 1.57 } },
+  crafted_priest_staff: { file: 'Sword.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_priest_staff: { file: 'Sword_Golden.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_shaman_axe: { file: 'Axe_Double.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_shaman_axe: { file: 'Axe_Double_Golden.fbx', transform: { scale: 0.018, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_mage_staff: { file: 'Sword.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_mage_staff: { file: 'Sword_Golden.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_warlock_staff: { file: 'Sword.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_warlock_staff: { file: 'Sword_Golden.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  crafted_druid_staff: { file: 'Sword.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+  golden_druid_staff: { file: 'Sword_Golden.fbx', transform: { scale: 0.016, px: -0.05, py: 0.09, pz: -0.045, rx: -3.03, ry: 0, rz: 1.57 } },
+};
 const DUNGEON_ENV_INTENSITY = 0.05;
 // raw HDRI PMREMs integrate the real sun the dome shader clamps away —
 // rescale so ambient matches the dome-capture look (see lookdev-hookup.md)
@@ -123,6 +148,11 @@ export class Renderer {
   private baseExposure = 1.12; // tone-mapping exposure at brightness 1.0
   private tmpV = new THREE.Vector3();
   private tmpV2 = new THREE.Vector3();
+  private gearLoader = new FBXLoader();
+  private gearTemplates = new Map<string, THREE.Object3D>();
+  private gearLoading = new Set<string>();
+  private craftingTableTemplate: THREE.Object3D | null = null;
+  private craftingTableLoading = false;
   // floating /say-/yell bubbles, keyed by speaker entity id
   private chatBubbles = new Map<number, { el: HTMLDivElement; until: number }>();
   private sun: THREE.DirectionalLight;
@@ -237,6 +267,7 @@ export class Renderer {
     void loadGltf('/models/tools/woc_new/Axe_Wood.gltf').then((gltf) => {
       this.axeTemplate = gltf.scene;
     }).catch(() => { this.axeTemplate = null; });
+    this.loadCraftingTableTemplate();
     this.loadFishingRodTemplate();
 
     // visible sun disc + bloom halo
@@ -390,20 +421,28 @@ export class Renderer {
   // including those between other players and mobs).
   handleEvent(ev: SimEvent): void {
     switch (ev.type) {
-      case 'spellfx':
-        if (ev.fx === 'projectile') this.vfx.projectile(ev.sourceId, ev.targetId, ev.school);
-        else if (ev.fx === 'tick') this.vfx.tick(ev.targetId, ev.school);
+      case 'spellfx': {
+        if (ev.fx === 'projectile') {
+          const source = ev.sourceId !== -1 ? this.sim.entities.get(ev.sourceId) : undefined;
+          const hunterShot = ev.school === 'physical' && source?.kind === 'player' && source.templateId === 'hunter';
+          if (hunterShot) this.vfx.arrowProjectile(ev.sourceId, ev.targetId);
+          else this.vfx.projectile(ev.sourceId, ev.targetId, ev.school);
+        } else if (ev.fx === 'tick') this.vfx.tick(ev.targetId, ev.school);
         else this.vfx.nova(ev.targetId, ev.school);
         break;
-      case 'damage':
+      }
+      case 'damage': {
         // every melee/ranged swing animates the attacker for all to see
         if (ev.school === 'physical' && ev.sourceId !== -1) this.triggerAttack(ev.sourceId);
+        const source = ev.sourceId !== -1 ? this.sim.entities.get(ev.sourceId) : undefined;
+        const hunterShot = ev.school === 'physical' && source?.kind === 'player' && source.templateId === 'hunter';
         if (ev.kind === 'hit' && ev.amount > 0) {
           // landed blows flinch the victim (rate-limited inside the visual)
           this.triggerHit(ev.targetId);
-          if (ev.school === 'physical') this.vfx.meleeSpark(ev.targetId, ev.crit);
+          if (ev.school === 'physical' && !hunterShot) this.vfx.meleeSpark(ev.targetId, ev.crit);
         }
         break;
+      }
       case 'heal2':
         if (ev.amount > 0 || ev.crit) this.vfx.healGlow(ev.targetId);
         break;
@@ -428,6 +467,38 @@ export class Renderer {
   private crateMat: THREE.Material | null = null;
   private crateLidMat: THREE.Material | null = null;
   private sparkleMat: THREE.SpriteMaterial | null = null;
+
+  private loadCraftingTableTemplate(): void {
+    if (this.craftingTableTemplate || this.craftingTableLoading) return;
+    this.craftingTableLoading = true;
+    void loadGltf(CRAFTING_TABLE_MODEL_URL).then((gltf) => {
+      const root = gltf.scene;
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+        }
+      });
+      this.craftingTableTemplate = root;
+      this.craftingTableLoading = false;
+    }).catch(() => { this.craftingTableLoading = false; });
+  }
+
+  private createCraftingTableModel(): THREE.Object3D | null {
+    if (!this.craftingTableTemplate) { this.loadCraftingTableTemplate(); return null; }
+    const model = this.craftingTableTemplate.clone(true);
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const maxXZ = Math.max(0.01, size.x, size.z);
+    const scale = CRAFTING_TABLE_TARGET_SIZE / maxXZ;
+    const center = box.getCenter(new THREE.Vector3());
+    model.scale.setScalar(scale);
+    model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
+    model.rotation.y = Math.PI * 0.5;
+    return model;
+  }
 
   private createView(e: Entity): void {
     const group = new THREE.Group();
@@ -495,31 +566,54 @@ export class Renderer {
       objectMesh = body!;
     } else if (e.kind === 'object') {
       body = new THREE.Group();
-      height = 1.2;
-      // braced plank crate matching the props.ts crates — never a bare cube
-      this.crateMat ??= new THREE.MeshLambertMaterial({ map: plankTexture() });
-      this.crateLidMat ??= new THREE.MeshLambertMaterial({ color: 0x4a3320 });
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.78, 0.78), this.crateMat);
-      crate.position.y = 0.42;
-      crate.castShadow = true;
-      body!.add(crate);
-      for (const sx of [1, -1]) {
-        for (const sz of [1, -1]) {
-          const brace = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.86, 0.1), this.crateLidMat);
-          brace.position.set(sx * 0.37, 0.42, sz * 0.37);
-          body!.add(brace);
+      if (e.templateId === 'crafting_table') {
+        height = 1.15;
+        const tableModel = this.createCraftingTableModel();
+        if (tableModel) {
+          body.add(tableModel);
+        } else {
+          // Temporary low block while the GLB parses; it is replaced in-place as soon as the model is ready.
+          const loadingMat = new THREE.MeshLambertMaterial({ color: 0x6b4728 });
+          const loading = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.16, 0.9), loadingMat);
+          loading.position.y = 0.55;
+          loading.castShadow = true;
+          body.add(loading);
+          void loadGltf(CRAFTING_TABLE_MODEL_URL).then((gltf) => {
+            this.craftingTableTemplate = gltf.scene;
+            const readyModel = this.createCraftingTableModel();
+            if (!readyModel || !body?.parent) return;
+            loading.removeFromParent();
+            body.add(readyModel);
+          }).catch(() => undefined);
         }
-      }
-      for (const sy of [0.06, 0.78]) {
-        for (const s of [1, -1]) {
-          const stripA = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.08, 0.08), this.crateLidMat);
-          stripA.position.set(0, sy, s * 0.38);
-          const stripB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.82), this.crateLidMat);
-          stripB.position.set(s * 0.38, sy, 0);
-          body!.add(stripA, stripB);
+        body.rotation.y = 0.25;
+      } else {
+        height = 1.2;
+        // braced plank crate matching the props.ts crates — never a bare cube
+        this.crateMat ??= new THREE.MeshLambertMaterial({ map: plankTexture() });
+        this.crateLidMat ??= new THREE.MeshLambertMaterial({ color: 0x4a3320 });
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.78, 0.78), this.crateMat);
+        crate.position.y = 0.42;
+        crate.castShadow = true;
+        body!.add(crate);
+        for (const sx of [1, -1]) {
+          for (const sz of [1, -1]) {
+            const brace = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.86, 0.1), this.crateLidMat);
+            brace.position.set(sx * 0.37, 0.42, sz * 0.37);
+            body!.add(brace);
+          }
         }
+        for (const sy of [0.06, 0.78]) {
+          for (const s of [1, -1]) {
+            const stripA = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.08, 0.08), this.crateLidMat);
+            stripA.position.set(0, sy, s * 0.38);
+            const stripB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.82), this.crateLidMat);
+            stripB.position.set(s * 0.38, sy, 0);
+            body!.add(stripA, stripB);
+          }
+        }
+        body!.rotation.y = (e.id % 7) * 0.45; // break identical alignment
       }
-      body!.rotation.y = (e.id % 7) * 0.45; // break identical alignment
       objectMesh = body!;
       if (!this.sparkleMat) {
         this.sparkleMat = new THREE.SpriteMaterial({ map: sparkleTexture(), transparent: true, depthWrite: false });
@@ -527,7 +621,7 @@ export class Renderer {
       }
       sparkle = new THREE.Sprite(this.sparkleMat);
       sparkle.scale.set(0.9, 0.9, 1);
-      sparkle.position.y = 1.35;
+      sparkle.position.y = height + 0.15;
       group.add(sparkle);
     } else {
       visual = createCharacterVisual(e);
@@ -774,6 +868,33 @@ export class Renderer {
     }, undefined, () => { this.fishingRodTemplate = null; });
   }
 
+  private applyEquippedWeaponVisual(active: CharacterVisual, e: Entity, hideForHarvestTool = false): void {
+    if (hideForHarvestTool) { active.setEquippedWeapon(null, null); return; }
+    if (e.id !== this.sim.playerId) { active.setEquippedWeapon(null, null); return; }
+    const itemId = this.sim.equipment.mainhand ?? '';
+    const def = HELD_WEAPONS[itemId];
+    if (!def) { active.setEquippedWeapon(null, null); return; }
+    const cached = this.gearTemplates.get(def.file);
+    if (cached) { active.setEquippedWeapon(cached, def.transform); return; }
+    active.setEquippedWeapon(null, null);
+    if (this.gearLoading.has(def.file)) return;
+    this.gearLoading.add(def.file);
+    this.gearLoader.load(`${GEAR_BASE}${def.file}`, (root) => {
+      root.name = def.file.replace(/\.fbx$/i, '');
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = false;
+        }
+      });
+      this.gearTemplates.set(def.file, root);
+      this.gearLoading.delete(def.file);
+    }, undefined, () => {
+      this.gearLoading.delete(def.file);
+    });
+  }
+
   private updateAxeVisual(active: CharacterVisual, e: Entity, fishingOverride = false): void {
     const fishing = fishingOverride || (e.kind === 'player' && e.choppingTreeKey?.startsWith('fish:') && !e.dead);
     const chopping = e.kind === 'player' && e.choppingTreeKey !== null && !fishing && !e.dead;
@@ -930,6 +1051,7 @@ export class Renderer {
       }
       active.update(dt, st, animate);
       this.updateAxeVisual(active, e, fishing);
+      this.applyEquippedWeaponVisual(active, e, st.chopping || st.fishing);
 
       if (e.castingAbility !== null && st.casting) {
         this.vfx.castSparkle(e.id, ABILITIES[e.castingAbility!]?.school ?? 'arcane', dt);
@@ -994,7 +1116,9 @@ export class Renderer {
     this.propsView.update(this.camera.position.x, this.camera.position.z, fogFar);
     this.farmsteadView.update();
     this.fishingView.update(this.time);
-    this.foliage.setChoppedTrees(new Set(this.sim.choppedTrees.keys()));
+    const choppedTreeKeys = new Set(this.sim.choppedTrees.keys());
+    this.foliage.setChoppedTrees(choppedTreeKeys);
+    this.dungeons?.updateTutorialTrees(choppedTreeKeys);
     this.foliage.update(p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z, fogFar);
 
     this.vfx.update(dt);

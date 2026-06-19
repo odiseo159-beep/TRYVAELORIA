@@ -248,6 +248,7 @@ export interface GroundObjectDef {
   itemId: string;
   name: string;
   positions: { x: number; z: number }[];
+  templateId?: string; // non-pickup interactable object, e.g. crafting_table
 }
 
 export interface DungeonSpawn {
@@ -264,7 +265,7 @@ export interface DungeonDef {
   entry: { x: number; z: number }; // player arrival point (instance-local)
   exitOffset: { x: number; z: number }; // exit portal (instance-local)
   spawns: DungeonSpawn[];
-  interior: 'crypt' | 'sanctum'; // renderer + collider interior builder key
+  interior: 'crypt' | 'tutorial' | 'sanctum'; // renderer + collider interior builder key
   suggestedPlayers: number;
   enterText: string;
   leaveText: string;
@@ -320,9 +321,10 @@ export function emptyZoneProps(): ZonePropsDef {
 }
 
 export interface QuestObjective {
-  type: 'kill' | 'collect' | 'chop';
+  type: 'kill' | 'collect' | 'chop' | 'craft';
   targetMobId?: string; // for kill
   itemId?: string; // for collect
+  craftTier?: 'normal' | 'golden'; // for craft
   count: number;
   label: string;
 }

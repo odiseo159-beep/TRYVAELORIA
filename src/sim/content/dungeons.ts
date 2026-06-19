@@ -182,9 +182,9 @@ const CRYPT_SPAWN_LIST: DungeonSpawn[] = [
 // Short onboarding path: tiny solo mobs placed down the existing crypt nave.
 // The player starts at z=4 and the exit portal sits at the back dais.
 const TUTORIAL_SPAWN_LIST: DungeonSpawn[] = [
-  { mobId: 'tutorial_crawler', x: -3, z: 20 },
-  { mobId: 'tutorial_crawler', x: 3, z: 34 },
-  { mobId: 'tutorial_sentinel', x: 0, z: 58 },
+  { mobId: 'tutorial_crawler', x: -3, z: 24 },
+  { mobId: 'tutorial_crawler', x: 4, z: 80 },
+  { mobId: 'tutorial_sentinel', x: 0, z: 124 },
 ];
 
 // Sunken Bastion: same 13-spawn pacing as the crypt — packs of 2 elites,
@@ -241,11 +241,11 @@ export const DUNGEON_DEFS: Record<string, DungeonDef> = {
     // tutorial portal returns the player after onboarding.
     doorPos: { x: 2, z: 2 },
     entry: { x: 0, z: 4 },
-    exitOffset: { x: 0, z: 104 },
+    exitOffset: { x: 0, z: 156 },
     spawns: TUTORIAL_SPAWN_LIST,
-    interior: 'crypt',
+    interior: 'tutorial',
     suggestedPlayers: 1,
-    enterText: 'Tutorial: move with WASD, click enemies to target, use your hotbar abilities, then take the portal at the end.',
+    enterText: 'Tutorial: move with WASD. Try combat, chop the tree, fish at the lake, then take the portal at the end.',
     leaveText: 'Tutorial complete. Welcome to the city.',
   },
   hollow_crypt: {

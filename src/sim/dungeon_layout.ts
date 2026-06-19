@@ -68,6 +68,19 @@ export const CRYPT_LAYOUT: DungeonLayout = {
   dais: { x: 0, z: 96, r: 9.5 },
 };
 
+// Tutorial crypt: longer onboarding nave with an open training bay for a small
+// underground lake and a harvestable tree before the final combat/portal.
+export const TUTORIAL_LAYOUT: DungeonLayout = {
+  zMin: -19,
+  zMax: 168,
+  sideWallZ: 74.5,
+  sideWallHd: 94,
+  pillars: grid(10, 145, 15, [-14, 14]),
+  tombs: grid(18, 138, 24, [-19, 19]),
+  stubs: [],
+  dais: { x: 0, z: 152, r: 10.5 },
+};
+
 // Gravewyrm Sanctum: a stretched three-chamber crypt (z -19..158) with
 // narrowed waists at z 67/115 leaving a ~10u centre passage at |x| <= 5.
 export const SANCTUM_LAYOUT: DungeonLayout = (() => {

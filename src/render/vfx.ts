@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { loadTexture } from './assets/loader';
 import { registerPreload } from './assets/preload';
 import { GFX } from './gfx';
@@ -14,6 +15,8 @@ import { GFX } from './gfx';
 // tier keeps plain colors (same sprites, no HDR boost).
 
 const CAPACITY = 4096;
+const ARROW_MODEL_URL = '/models/gear/armaduras-etc/fbx/Arrow.fbx';
+const ARROW_LENGTH = 1.35;
 
 // HDR multipliers (graphics-plan step 9); 1.0 on the no-composer path
 function hdr(k: number): number {
@@ -102,6 +105,7 @@ export const SCHOOL_COLORS: Record<string, number> = {
 interface Projectile {
   pos: THREE.Vector3;
   targetId: number;
+  model?: THREE.Object3D;
   color: THREE.Color; // base school color (impact burst = x1.6)
   coreColor: THREE.Color; // HDR core (x2.5)
   trailColor: THREE.Color; // sparkling trail (x1.4)
@@ -134,9 +138,13 @@ export class Vfx {
   private rotAttr: Float32Array;
   private head = 0;
   private projectiles: Projectile[] = [];
+  private fbxLoader = new FBXLoader();
+  private arrowTemplate: THREE.Object3D | null = null;
+  private arrowLoading = false;
   private tmpColor = new THREE.Color();
+  private tmpTarget = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, private anchor: EntityAnchor) {
+  constructor(private scene: THREE.Scene, private anchor: EntityAnchor) {
     this.pos = new Float32Array(CAPACITY * 3);
     this.vel = new Float32Array(CAPACITY * 3);
     this.col = new Float32Array(CAPACITY * 3);
@@ -214,6 +222,54 @@ export class Vfx {
     this.points.frustumCulled = false;
     this.points.renderOrder = 5;
     scene.add(this.points);
+    this.loadArrowTemplate();
+  }
+
+  private loadArrowTemplate(): void {
+    if (this.arrowTemplate || this.arrowLoading) return;
+    this.arrowLoading = true;
+    this.fbxLoader.load(ARROW_MODEL_URL, (root) => {
+      root.name = 'ArrowProjectileTemplate';
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = false;
+        }
+      });
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      const longest = Math.max(0.01, size.x, size.y, size.z);
+      const scale = ARROW_LENGTH / longest;
+      const center = box.getCenter(new THREE.Vector3());
+      root.scale.setScalar(scale);
+      root.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+      this.arrowTemplate = root;
+      this.arrowLoading = false;
+    }, undefined, () => { this.arrowLoading = false; });
+  }
+
+  private createArrowProjectileModel(): THREE.Object3D | null {
+    const root = new THREE.Group();
+    if (!this.arrowTemplate) {
+      this.loadArrowTemplate();
+      const mat = new THREE.MeshLambertMaterial({ color: 0xd8c6a0 });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.05, 8), mat);
+      shaft.rotation.x = Math.PI / 2;
+      shaft.position.z = 0.06;
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.22, 8), new THREE.MeshLambertMaterial({ color: 0x6f5b42 }));
+      tip.rotation.x = Math.PI / 2;
+      tip.position.z = -0.55;
+      root.add(shaft, tip);
+      this.scene.add(root);
+      return root;
+    }
+    const model = this.arrowTemplate.clone(true);
+    model.rotation.y = Math.PI / 2;
+    root.add(model);
+    this.scene.add(root);
+    return root;
   }
 
   setViewportScale(heightPx: number, fovDeg: number): void {
@@ -246,22 +302,28 @@ export class Vfx {
   // High-level effects
   // ---------------------------------------------------------------------
 
-  projectile(sourceId: number, targetId: number, school: string): void {
+  projectile(sourceId: number, targetId: number, school: string, modelKind: 'arrow' | null = null): void {
     const from = this.anchor(sourceId, 0.62);
     if (!from) return;
     const color = new THREE.Color(SCHOOL_COLORS[school] ?? 0xffffff);
     const sprites = projectileSprites(school);
+    const model = modelKind === 'arrow' ? this.createArrowProjectileModel() ?? undefined : undefined;
     this.projectiles.push({
       pos: from.clone(),
       targetId,
+      model,
       color,
       coreColor: color.clone().multiplyScalar(hdr(2.5)),
       trailColor: color.clone().multiplyScalar(hdr(1.4)),
-      speed: 26,
+      speed: modelKind === 'arrow' ? 38 : 26,
       ttl: 3,
       coreSprite: sprites.core,
       trailSprite: sprites.trail,
     });
+  }
+
+  arrowProjectile(sourceId: number, targetId: number): void {
+    this.projectile(sourceId, targetId, 'physical', 'arrow');
   }
 
   burst(at: THREE.Vector3, school: string, count = 18, power = 1): void {
@@ -416,6 +478,7 @@ export class Vfx {
       pr.ttl -= dt;
       const target = this.anchor(pr.targetId, 0.5);
       if (!target || pr.ttl <= 0) {
+        if (pr.model) this.scene.remove(pr.model);
         this.projectiles.splice(i, 1);
         continue;
       }
@@ -423,6 +486,11 @@ export class Vfx {
       const dist = dir.length();
       const step = pr.speed * dt;
       if (dist <= Math.max(0.7, step)) {
+        if (pr.model) {
+          this.scene.remove(pr.model);
+          this.projectiles.splice(i, 1);
+          continue;
+        }
         // impact: school-tinted cross-flash + burst that survives a 30fps frame
         this.tmpColor.copy(pr.color).multiplyScalar(hdr(1.6));
         this.spawn(target.x, target.y, target.z, 0, 0.5, 0, this.tmpColor, 1.1, 0.22, 0, SPR.flash);
@@ -436,11 +504,17 @@ export class Vfx {
             k % 2 === 0 ? SPR.sparkle : SPR.sparkBurst,
           );
         }
+        if (pr.model) this.scene.remove(pr.model);
         this.projectiles.splice(i, 1);
         continue;
       }
       dir.multiplyScalar(step / dist);
       pr.pos.add(dir);
+      if (pr.model) {
+        pr.model.position.copy(pr.pos);
+        pr.model.lookAt(this.tmpTarget.copy(target));
+        continue;
+      }
       // bright HDR core (blooms into a comet) + sparkling trail
       this.spawn(pr.pos.x, pr.pos.y, pr.pos.z, 0, 0, 0, pr.coreColor, 1.0, 0.12, 0, pr.coreSprite);
       this.spawn(

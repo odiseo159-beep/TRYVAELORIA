@@ -643,6 +643,9 @@ export class ClientWorld implements IWorld {
   useItem(itemId: string): void {
     this.cmd({ cmd: 'use', item: itemId });
   }
+  craftClassWeapon(tier: 'normal' | 'golden'): void {
+    this.cmd({ cmd: 'craft_class_weapon', tier });
+  }
   buyItem(npcId: number, itemId: string): void {
     this.cmd({ cmd: 'buy', npc: npcId, item: itemId });
   }

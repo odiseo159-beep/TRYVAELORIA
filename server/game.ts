@@ -609,6 +609,7 @@ export class GameServer {
       case 'abandon': if (typeof msg.quest === 'string') { sim.abandonQuest(msg.quest, pid); this.resyncQuests(session); } break;
       case 'equip': if (typeof msg.item === 'string') sim.equipItem(msg.item, pid); break;
       case 'use': if (typeof msg.item === 'string') sim.useItem(msg.item, pid); break;
+      case 'craft_class_weapon': if (msg.tier === 'normal' || msg.tier === 'golden') sim.craftClassWeapon(msg.tier, pid); break;
       case 'buy': if (typeof msg.npc === 'number' && typeof msg.item === 'string') sim.buyItem(msg.npc, msg.item, pid); break;
       case 'sell': if (typeof msg.item === 'string') sim.sellItem(msg.item, pid); break;
       case 'release': sim.releaseSpirit(pid); break;

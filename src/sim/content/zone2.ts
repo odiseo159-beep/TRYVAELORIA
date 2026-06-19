@@ -467,6 +467,10 @@ export const ZONE2_CAMPS: CampDef[] = [
 
 export const ZONE2_OBJECTS: GroundObjectDef[] = [
   {
+    itemId: 'crafting_table', templateId: 'crafting_table', name: 'Crafting Table',
+    positions: [{ x: 8, z: 298 }],
+  },
+  {
     itemId: 'fen_muster_order',
     name: 'Fenbridge Muster Order',
     positions: [{ x: 1, z: 294 }, { x: -2, z: 297 }],

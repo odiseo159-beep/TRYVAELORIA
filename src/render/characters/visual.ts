@@ -25,6 +25,12 @@ export interface AnimState {
   sitting: boolean;
 }
 
+export interface HeldWeaponTransform {
+  scale: number;
+  px?: number; py?: number; pz?: number;
+  rx?: number; ry?: number; rz?: number;
+}
+
 type BaseState = 'idle' | 'walk' | 'walkBack' | 'run' | 'cast' | 'chop' | 'swim' | 'sit';
 
 const FADE = 0.22;
@@ -90,6 +96,10 @@ export class CharacterVisual {
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private ghostMaterials = new Map<THREE.Material, THREE.Material>();
   private originalWeaponVisibility = new Map<THREE.Object3D, boolean>();
+  private authoredBowNodes: THREE.Object3D[] = [];
+  private equippedWeapon: THREE.Object3D | null = null;
+  private equippedWeaponTemplate: THREE.Object3D | null = null;
+  private hideEquippedWeaponForHarvest = false;
   private harvestTool: THREE.Object3D | null = null;
   private harvestToolTemplate: THREE.Object3D | null = null;
   private fishingPoseBones: { shoulder: THREE.Object3D | null; arm: THREE.Object3D | null; forearm: THREE.Object3D | null; hand: THREE.Object3D | null } | null = null;
@@ -107,6 +117,9 @@ export class CharacterVisual {
   private fishingPoseEuler = new THREE.Euler();
   private fishingPoseQuat = new THREE.Quaternion();
   private fishingPoseShift = new THREE.Vector3();
+  private bowBox = new THREE.Box3();
+  private bowSize = new THREE.Vector3();
+  private bowCenter = new THREE.Vector3();
 
   private baseState: BaseState = 'idle';
   // preview-only: swap the idle clip (e.g. relaxed 'Idle' instead of the
@@ -138,6 +151,7 @@ export class CharacterVisual {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) this.originalMaterials.set(mesh, mesh.material);
       if (isVisibleWeaponNode(o)) this.originalWeaponVisibility.set(o, o.visible);
+      if (/ranger_bow|bow/i.test(o.name)) this.authoredBowNodes.push(o);
     });
     this.modelWrap.rotation.y = prep.def.yaw ?? 0;
     this.modelWrap.scale.setScalar(prep.normScale);
@@ -307,13 +321,16 @@ export class CharacterVisual {
   }
 
   setHarvestTool(template: THREE.Object3D | null, active: boolean, progress: number): void {
+    this.hideEquippedWeaponForHarvest = active;
     for (const [node, wasVisible] of this.originalWeaponVisibility) {
       node.visible = active ? false : wasVisible;
     }
     if (!active) {
       if (this.harvestTool) this.harvestTool.visible = false;
+      if (this.equippedWeapon) this.equippedWeapon.visible = !!this.equippedWeaponTemplate;
       return;
     }
+    if (this.equippedWeapon) this.equippedWeapon.visible = false;
     if (this.harvestTool && this.harvestToolTemplate !== template) {
       this.harvestTool.removeFromParent();
       this.harvestTool = null;
@@ -356,6 +373,90 @@ export class CharacterVisual {
       this.harvestTool.rotation.set(-1.08, 0.28, 1.42);
       this.harvestTool.position.set(-0.055, 0.18, -0.11);
     } else this.harvestTool.rotation.set(-3.03 + swing * 0.22, 0, 1.57 + swing * 0.12);
+  }
+
+  setEquippedWeapon(template: THREE.Object3D | null, transform: HeldWeaponTransform | null): void {
+    const active = !!template && !!transform;
+    const useAuthoredBow = active && !!template && /bow/i.test(template.name) && this.authoredBowNodes.length > 0;
+    if (this.hideEquippedWeaponForHarvest) {
+      for (const [node] of this.originalWeaponVisibility) node.visible = false;
+      for (const node of this.authoredBowNodes) node.visible = false;
+      if (this.equippedWeapon) this.equippedWeapon.visible = false;
+      return;
+    }
+    for (const [node, wasVisible] of this.originalWeaponVisibility) node.visible = active && !useAuthoredBow ? false : wasVisible;
+    if (useAuthoredBow) {
+      // Quaternius ranger already has a correctly socketed/animated bow on
+      // Weapon.R. The armaduras FBX bow has a different pivot/bounds and kept
+      // floating or reaching the floor. For hunter bows, use the authored bow
+      // as the held visual and keep custom FBX bows out of the hand. Do not
+      // reskin it for crafted/golden yet: all hunter weapon upgrades remain
+      // stat/item upgrades, but the archer keeps the default good-looking bow
+      // until we have an external bow model with a compatible pivot.
+      for (const node of this.authoredBowNodes) node.visible = true;
+      if (this.equippedWeapon) this.equippedWeapon.visible = false;
+      return;
+    }
+    if (!active) {
+      if (this.equippedWeapon) this.equippedWeapon.visible = false;
+      return;
+    }
+    if (this.equippedWeapon && this.equippedWeaponTemplate !== template) {
+      this.equippedWeapon.removeFromParent();
+      this.equippedWeapon = null;
+      this.equippedWeaponTemplate = null;
+    }
+    if (!this.equippedWeapon && template && transform) {
+      const bone = this.findHandBone();
+      if (!bone) return;
+      const weapon = this.cloneEquippedWeapon(template);
+      weapon.name = template.name || 'Equipped_Weapon_Attached';
+      weapon.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = false;
+        }
+      });
+      bone.add(weapon);
+      this.equippedWeapon = weapon;
+      this.equippedWeaponTemplate = template;
+    }
+    if (!this.equippedWeapon || !transform) return;
+    this.equippedWeapon.visible = true;
+    this.equippedWeapon.scale.setScalar(transform.scale);
+    this.equippedWeapon.position.set(transform.px ?? -0.05, transform.py ?? 0.085, transform.pz ?? -0.045);
+    this.equippedWeapon.rotation.set(transform.rx ?? -3.03, transform.ry ?? 0, transform.rz ?? 1.57);
+  }
+
+  private cloneEquippedWeapon(template: THREE.Object3D): THREE.Object3D {
+    const clone = template.clone(true);
+    if (!/bow/i.test(template.name)) return clone;
+
+    clone.updateMatrixWorld(true);
+    this.bowBox.setFromObject(clone);
+    this.bowBox.getSize(this.bowSize);
+    this.bowBox.getCenter(this.bowCenter);
+
+    const root = new THREE.Group();
+    root.name = template.name || 'Equipped_Bow_GripRoot';
+    // The armaduras FBX bows have their origin around the model centre, while
+    // the rig socket expects the origin to be at the grip. Re-anchor the model
+    // inside a wrapper so local 0,0,0 is the hand grip, matching the authored
+    // bow that already sits correctly on WeaponR.
+    clone.position.set(
+      -this.bowCenter.x,
+      -this.bowCenter.y,
+      -this.bowCenter.z,
+    );
+    // Move the visible bow slightly forward/down from the grip so the handle,
+    // not the string/tip, lands inside the palm. These are pre-scale local FBX
+    // units, intentionally proportional to the measured bounds.
+    clone.position.x += this.bowSize.x * 0.10;
+    clone.position.y -= this.bowSize.y * 0.03;
+    clone.position.z += this.bowSize.z * 0.38;
+    root.add(clone);
+    return root;
   }
 
   private applyFishingArmPose(amount: number): void {

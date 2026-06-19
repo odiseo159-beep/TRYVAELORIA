@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAELORIA — Gear Preview</title>
+  <style>
+    :root { --gold:#ffd100; --gold-dim:#c8a838; --panel:#121018ee; --border:#6f5a2a; --text:#ead9a6; --muted:#9a8c66; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#050509; color:var(--text); font-family:Arial, Helvetica, sans-serif; }
+    #app { position:fixed; inset:0; display:grid; grid-template-columns: 330px 1fr 330px; gap:12px; padding:12px; }
+    .panel { background:linear-gradient(170deg,#1a1510f2,#0a0806f2); border:2px solid #2a2114; box-shadow:0 0 0 1px var(--border), 0 12px 28px #000c, inset 0 1px 0 #fff2; border-radius:8px; padding:12px; overflow:auto; }
+    h1,h2 { font-family:Georgia, 'Times New Roman', serif; color:var(--gold); margin:0 0 10px; text-shadow:0 1px 2px #000; }
+    h1 { font-size:20px; } h2 { font-size:15px; border-bottom:1px solid #463a1c; padding-bottom:6px; }
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+    select, input, button { width:100%; background:#0b0b12; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:7px; }
+    button { cursor:pointer; color:var(--gold); background:linear-gradient(#443414,#181006); margin-top:8px; }
+    button:hover { filter:brightness(1.2); }
+    #stagePanel { position:relative; padding:0; overflow:hidden; }
+    #gear-canvas { width:100%; height:100%; display:block; }
+    .hint { font-size:12px; color:var(--muted); line-height:1.45; margin-bottom:10px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .row { display:grid; grid-template-columns: 70px 1fr 48px; gap:8px; align-items:center; margin:7px 0; font-size:12px; color:var(--muted); }
+    .row input { padding:0; }
+    .row output { text-align:right; color:#e8d8a8; font-variant-numeric:tabular-nums; }
+    .thumbs { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .thumb { aspect-ratio:1; border:1px solid #473719; border-radius:6px; background:#08080d center/contain no-repeat; cursor:pointer; position:relative; }
+    .thumb.active { outline:2px solid var(--gold); box-shadow:0 0 14px #ffd10055; }
+    .thumb span { position:absolute; left:2px; right:2px; bottom:2px; font-size:9px; text-align:center; color:#fff; text-shadow:0 1px 3px #000; background:#0008; border-radius:3px; padding:1px; }
+    #status { position:absolute; left:14px; bottom:12px; background:#000b; border:1px solid #6f5a2a; color:#ffd100; padding:7px 10px; border-radius:6px; font-size:12px; max-width:70%; }
+    .pill { display:inline-block; padding:2px 6px; border:1px solid #6f5a2a; border-radius:999px; color:#c9b27a; margin:2px 2px 2px 0; font-size:11px; }
+    a { color:var(--gold); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside class="panel">
+      <h1>Gear Preview</h1>
+      <p class="hint">Container local para probar cómo quedan las armas del ZIP sobre cada personaje. Arrastra el personaje para rotarlo. Las armaduras quedan desactivadas.</p>
+      <label>Personaje</label>
+      <select id="classSelect">
+        <option value="warrior">Warrior</option>
+        <option value="paladin">Paladin</option>
+        <option value="hunter">Ranger / Archer</option>
+        <option value="rogue">Rogue</option>
+        <option value="priest">Acolyte / Priest</option>
+        <option value="shaman">Shaman</option>
+        <option value="mage">Mage</option>
+        <option value="warlock">Warlock</option>
+        <option value="druid">Druid</option>
+      </select>
+      <label>Arma permitida para esa clase</label>
+      <select id="weaponSelect"></select>
+      <div class="grid">
+        <button id="resetWeapon">Reset arma</button>
+      </div>
+      <h2 style="margin-top:16px">Iconos rápidos</h2>
+      <div id="thumbs" class="thumbs"></div>
+    </aside>
+    <main id="stagePanel" class="panel">
+      <canvas id="gear-canvas"></canvas>
+      <div id="status">Cargando assets…</div>
+    </main>
+    <aside class="panel">
+      <h2>Ajuste arma</h2>
+      <div id="weaponControls"></div>
+      <h2 style="margin-top:16px">Notas</h2>
+      <p class="hint">Esto es visual-only. Las armaduras del ZIP no se usan. Cuando un arma quede bien, se copian estos valores al sistema real de equipo/crafteo.</p>
+      <div><span class="pill">FBXLoader</span><span class="pill">weapon-only</span><span class="pill">local preview</span></div>
+      <p class="hint" style="margin-top:10px"><a href="/">Volver al juego</a></p>
+    </aside>
+  </div>
+  <script type="module" src="/src/tools/gear_preview.ts"></script>
+</body>
+</html>

@@ -223,6 +223,7 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
       const obj = world.entities.get(bestObj)!;
       if (obj.templateId === 'dungeon_door' && obj.dungeonId) { world.enterDungeon(obj.dungeonId); return; }
       if (obj.templateId === 'dungeon_exit') { world.leaveDungeon(); return; }
+      if (obj.templateId === 'crafting_table') { hud.openCraftingTable(bestObj); return; }
       world.pickUpObject(bestObj);
       return;
     }

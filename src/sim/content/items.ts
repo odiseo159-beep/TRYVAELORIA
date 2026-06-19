@@ -73,6 +73,78 @@ export const BASE_ITEMS: Record<string, ItemDef> = {
     id: 'oiled_boots', name: 'Oiled Leather Boots', kind: 'armor', slot: 'feet', quality: 'uncommon',
     stats: { armor: 25, agi: 1 }, sellValue: 80,
   },
+  crafted_warrior_big_sword: {
+    id: 'crafted_warrior_big_sword', name: 'Crafted Big Sword', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 12, max: 20, speed: 2.8 }, stats: { str: 4, sta: 2 }, sellValue: 300, requiredClass: ['warrior'],
+  },
+  golden_warrior_big_sword: {
+    id: 'golden_warrior_big_sword', name: 'Golden Big Sword', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 24, max: 38, speed: 2.8 }, stats: { str: 10, sta: 6 }, sellValue: 1500, requiredClass: ['warrior'],
+  },
+  crafted_paladin_hammer: {
+    id: 'crafted_paladin_hammer', name: 'Crafted Warhammer', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 11, max: 19, speed: 2.9 }, stats: { str: 3, sta: 3 }, sellValue: 300, requiredClass: ['paladin'],
+  },
+  golden_paladin_hammer: {
+    id: 'golden_paladin_hammer', name: 'Golden Warhammer', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 23, max: 37, speed: 2.9 }, stats: { str: 8, sta: 8 }, sellValue: 1500, requiredClass: ['paladin'],
+  },
+  crafted_hunter_bow: {
+    id: 'crafted_hunter_bow', name: 'Crafted Ranger Bow', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 10, max: 17, speed: 2.4 }, stats: { agi: 4, sta: 1 }, sellValue: 300, requiredClass: ['hunter'],
+  },
+  golden_hunter_bow: {
+    id: 'golden_hunter_bow', name: 'Golden Ranger Bow', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 22, max: 34, speed: 2.4 }, stats: { agi: 10, sta: 4 }, sellValue: 1500, requiredClass: ['hunter'],
+  },
+  crafted_rogue_dagger: {
+    id: 'crafted_rogue_dagger', name: 'Crafted Dagger', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 8, max: 14, speed: 1.7, dagger: true }, stats: { agi: 4 }, sellValue: 300, requiredClass: ['rogue'],
+  },
+  golden_rogue_dagger: {
+    id: 'golden_rogue_dagger', name: 'Golden Dagger', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 18, max: 28, speed: 1.7, dagger: true }, stats: { agi: 10, sta: 3 }, sellValue: 1500, requiredClass: ['rogue'],
+  },
+  crafted_priest_staff: {
+    id: 'crafted_priest_staff', name: 'Crafted Acolyte Staff', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 10, max: 17, speed: 3.0 }, stats: { int: 4, spi: 2 }, sellValue: 300, requiredClass: ['priest'],
+  },
+  golden_priest_staff: {
+    id: 'golden_priest_staff', name: 'Golden Acolyte Staff', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 21, max: 34, speed: 3.0 }, stats: { int: 10, spi: 6 }, sellValue: 1500, requiredClass: ['priest'],
+  },
+  crafted_shaman_axe: {
+    id: 'crafted_shaman_axe', name: 'Crafted Battle Axe', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 11, max: 19, speed: 2.6 }, stats: { str: 3, int: 2 }, sellValue: 300, requiredClass: ['shaman'],
+  },
+  golden_shaman_axe: {
+    id: 'golden_shaman_axe', name: 'Golden Battle Axe', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 23, max: 36, speed: 2.6 }, stats: { str: 7, int: 7 }, sellValue: 1500, requiredClass: ['shaman'],
+  },
+  crafted_mage_staff: {
+    id: 'crafted_mage_staff', name: 'Crafted Mage Staff', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 10, max: 17, speed: 3.0 }, stats: { int: 5 }, sellValue: 300, requiredClass: ['mage'],
+  },
+  golden_mage_staff: {
+    id: 'golden_mage_staff', name: 'Golden Mage Staff', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 21, max: 34, speed: 3.0 }, stats: { int: 12, sta: 3 }, sellValue: 1500, requiredClass: ['mage'],
+  },
+  crafted_warlock_staff: {
+    id: 'crafted_warlock_staff', name: 'Crafted Warlock Staff', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 10, max: 17, speed: 3.0 }, stats: { int: 4, sta: 2 }, sellValue: 300, requiredClass: ['warlock'],
+  },
+  golden_warlock_staff: {
+    id: 'golden_warlock_staff', name: 'Golden Warlock Staff', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 21, max: 34, speed: 3.0 }, stats: { int: 10, sta: 6 }, sellValue: 1500, requiredClass: ['warlock'],
+  },
+  crafted_druid_staff: {
+    id: 'crafted_druid_staff', name: 'Crafted Druid Staff', kind: 'weapon', slot: 'mainhand', quality: 'uncommon',
+    weapon: { min: 10, max: 17, speed: 3.0 }, stats: { int: 3, spi: 3 }, sellValue: 300, requiredClass: ['druid'],
+  },
+  golden_druid_staff: {
+    id: 'golden_druid_staff', name: 'Golden Druid Staff', kind: 'weapon', slot: 'mainhand', quality: 'epic',
+    weapon: { min: 21, max: 34, speed: 3.0 }, stats: { int: 8, spi: 8 }, sellValue: 1500, requiredClass: ['druid'],
+  },
   quilted_trousers: {
     id: 'quilted_trousers', name: 'Quilted Trousers', kind: 'armor', slot: 'legs', quality: 'uncommon',
     stats: { armor: 30, sta: 2 }, sellValue: 90,

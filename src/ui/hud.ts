@@ -3,7 +3,7 @@ import type { IWorld } from '../world_api';
 import { Renderer } from '../render/renderer';
 import {
   ABILITIES, CLASSES, DUNGEON_LIST, DUNGEON_X_THRESHOLD, ITEMS, MOBS, NPCS, QUESTS,
-  WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, dungeonAt, zoneAt,
+  WORLD_MAX_X, WORLD_MAX_Z, WORLD_MIN_X, WORLD_MIN_Z, ZONES, dungeonAt, instanceOrigin, zoneAt,
 } from '../sim/data';
 import type { ZoneDef } from '../sim/data';
 import type { FarmPlot, InvSlot } from '../sim/types';
@@ -16,6 +16,11 @@ import { iconDataUrl, QUALITY_COLOR } from './icons';
 import { Keybinds, BIND_ACTIONS, BIND_CATEGORIES, isReservedCode, keyLabel } from '../game/keybinds';
 import { Settings, GameSettings, SETTING_RANGES } from '../game/settings';
 import { chatPlayerContextActions } from './player_context_menu';
+import {
+  CLASS_CRAFT_WEAPON, CLASS_GOLDEN_WEAPON, CRAFTING_TABLE_TEMPLATE, FISH_ITEM_IDS,
+  GOLDEN_WEAPON_COST, NORMAL_WEAPON_COST,
+} from '../sim/content/crafting';
+import { distanceToTutorialLakeLocal, isInTutorialLakeLocal, TUTORIAL_TREE, TUTORIAL_TREE_KEY } from '../sim/content/tutorial_resources';
 
 // hooks main wires after Input exists (the options menu drives input, audio,
 // graphics, and logout, all of which live outside the HUD)
@@ -77,6 +82,7 @@ export class Hud {
   private mapBg: HTMLCanvasElement | null = null;
   private openLootMobId: number | null = null;
   private openVendorNpcId: number | null = null;
+  private openCraftingTableId: number | null = null;
   private openGossipNpcId: number | null = null;
   private selectedQuestLogId: string | null = null;
   private lastPortraitTarget = -999;
@@ -648,6 +654,20 @@ export class Hud {
     }
   }
 
+  private tutorialLocalFor(p: Entity): { x: number; z: number; ox: number; oz: number } | null {
+    if (p.dungeonId !== 'tutorial_crypt') return null;
+    const dungeon = dungeonAt(p.pos.x);
+    if (dungeon?.id !== 'tutorial_crypt') return null;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < 64; i++) {
+      const o = instanceOrigin(dungeon.index, i);
+      const d = Math.abs(p.pos.z - o.z);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    const o = instanceOrigin(dungeon.index, best);
+    return { x: p.pos.x - o.x, z: p.pos.z - o.z, ox: o.x, oz: o.z };
+  }
+
   private updateTreePrompt(): void {
     const el = $('#tree-interact-prompt');
     const p = this.sim.player;
@@ -663,6 +683,21 @@ export class Hud {
       const d2 = dx * dx + dz * dz;
       if (d2 <= bestFarmD2) {
         el.innerHTML = '<span class="key">F</span> Pick up farm';
+        el.style.display = 'block';
+        return;
+      }
+    }
+    const tut = this.tutorialLocalFor(p);
+    if (tut) {
+      const treeKey = `${TUTORIAL_TREE_KEY}:${Math.round(tut.ox)}:${Math.round(tut.oz)}`;
+      const treeD2 = (tut.x - TUTORIAL_TREE.x) ** 2 + (tut.z - TUTORIAL_TREE.z) ** 2;
+      if (treeD2 <= TREE_PROMPT_RANGE * TREE_PROMPT_RANGE && !this.sim.choppedTrees.has(treeKey)) {
+        el.innerHTML = '<span class="key">F</span> Chop tutorial tree';
+        el.style.display = 'block';
+        return;
+      }
+      if (!isInTutorialLakeLocal(tut.x, tut.z) && distanceToTutorialLakeLocal(tut.x, tut.z) <= FISHING_PROMPT_RANGE) {
+        el.innerHTML = '<span class="key">F</span> Fish at tutorial lake';
         el.style.display = 'block';
         return;
       }
@@ -1194,7 +1229,14 @@ export class Hud {
           this.combatLog(`${ev.winnerName} has defeated ${ev.loserName} in a duel.`, '#fa6');
           audio.duelEnd();
           break;
-        case 'log': this.log(ev.text, ev.color ?? '#ccc'); break;
+        case 'log': {
+          if (ev.text.startsWith('Tutorial:') || ev.text.startsWith('Tutorial complete')) {
+            this.showBanner(ev.text);
+          } else {
+            this.log(ev.text, ev.color ?? '#ccc');
+          }
+          break;
+        }
         case 'playerDeath': {
           this.log('You have died.', '#ff4444');
           audio.death();
@@ -1391,6 +1433,70 @@ export class Hud {
     const npc = this.sim.entities.get(this.openGossipNpcId);
     if (npc) this.renderGossip(npc);
     else this.closeQuestDialog();
+  }
+
+  // -------------------------------------------------------------------------
+  // Crafting table
+  // -------------------------------------------------------------------------
+
+  openCraftingTable(objectId: number): void {
+    const obj = this.sim.entities.get(objectId);
+    if (!obj || obj.kind !== 'object' || obj.templateId !== CRAFTING_TABLE_TEMPLATE) return;
+    this.openCraftingTableId = objectId;
+    this.renderCraftingTable();
+  }
+
+  closeCraftingTable(): void {
+    this.openCraftingTableId = null;
+    document.querySelector('#crafting-window')?.remove();
+  }
+
+  private itemCount(itemId: string): number {
+    return this.sim.inventory.reduce((sum, s) => sum + (s.itemId === itemId ? s.count : 0), 0);
+  }
+
+  private fishCount(): number {
+    const ids = new Set(FISH_ITEM_IDS);
+    return this.sim.inventory.reduce((sum, s) => sum + (ids.has(s.itemId) ? s.count : 0), 0);
+  }
+
+  private renderCraftingTable(): void {
+    document.querySelector('#crafting-window')?.remove();
+    const cls = this.sim.cfg.playerClass;
+    const normalId = CLASS_CRAFT_WEAPON[cls];
+    const goldenId = CLASS_GOLDEN_WEAPON[cls];
+    const normal = ITEMS[normalId];
+    const golden = ITEMS[goldenId];
+    const wood = this.itemCount('harvested_wood');
+    const fish = this.fishCount();
+    const el = document.createElement('div');
+    el.id = 'crafting-window';
+    el.className = 'panel';
+    el.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:360px;z-index:80;padding:12px;';
+    el.innerHTML = `
+      <div class="panel-title">Crafting Table <button class="x-btn" data-close>×</button></div>
+      <div style="font-size:12px;color:#c9b27a;margin-bottom:10px;line-height:1.35">
+        Wood: <b>${wood}</b> · Fish: <b>${fish}</b><br>
+        Normal weapon first, Golden is the endgame version.
+      </div>
+      <button class="btn" data-craft="normal" ${wood < NORMAL_WEAPON_COST.wood || fish < NORMAL_WEAPON_COST.fish ? 'disabled' : ''}>
+        Craft ${esc(normal?.name ?? 'Class Weapon')}<br>
+        <small>${NORMAL_WEAPON_COST.wood} Wood + ${NORMAL_WEAPON_COST.fish} Fish</small>
+      </button>
+      <button class="btn" data-craft="golden" ${wood < GOLDEN_WEAPON_COST.wood || fish < GOLDEN_WEAPON_COST.fish ? 'disabled' : ''} style="margin-top:8px;color:#ffd100">
+        Craft ${esc(golden?.name ?? 'Golden Class Weapon')}<br>
+        <small>${GOLDEN_WEAPON_COST.wood} Wood + ${GOLDEN_WEAPON_COST.fish} Fish</small>
+      </button>
+    `;
+    document.querySelector('#ui')?.appendChild(el);
+    el.querySelector('[data-close]')?.addEventListener('click', () => this.closeCraftingTable());
+    el.querySelectorAll<HTMLButtonElement>('[data-craft]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tier = btn.dataset.craft === 'golden' ? 'golden' : 'normal';
+        this.sim.craftClassWeapon(tier);
+        setTimeout(() => this.renderCraftingTable(), 50);
+      });
+    });
   }
 
   // -------------------------------------------------------------------------

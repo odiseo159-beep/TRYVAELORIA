@@ -23,6 +23,14 @@ import {
   rageFromDealing, rageFromTaking, spellHitChance, xpForLevel,
 } from './types';
 
+import {
+  CLASS_CRAFT_WEAPON, CLASS_GOLDEN_WEAPON, CRAFTING_TABLE_TEMPLATE, FISH_ITEM_IDS,
+  GOLDEN_WEAPON_COST, NORMAL_WEAPON_COST,
+} from './content/crafting';
+import {
+  distanceToTutorialLakeLocal, isInTutorialLakeLocal, TUTORIAL_LAKE, TUTORIAL_TREE, TUTORIAL_TREE_KEY,
+} from './content/tutorial_resources';
+
 const LEASH_DISTANCE = 45;
 const DUNGEON_LEASH_DISTANCE = 70;
 const CORPSE_DURATION = 60;
@@ -292,6 +300,13 @@ export class Sim {
     for (const objDef of GROUND_OBJECTS) {
       for (const p of objDef.positions) {
         const obj = createGroundObject(this.nextId++, objDef.itemId, objDef.name, this.groundPos(p.x, p.z));
+        if (objDef.templateId) {
+          obj.templateId = objDef.templateId;
+          if (objDef.templateId === CRAFTING_TABLE_TEMPLATE) {
+            obj.objectItemId = null;
+            obj.lootable = true;
+          }
+        }
         this.addEntity(obj);
       }
     }
@@ -973,7 +988,34 @@ export class Sim {
     }
   }
 
+  private tutorialOriginFor(p: Entity): { x: number; z: number } | null {
+    if (p.dungeonId !== 'tutorial_crypt') return null;
+    const dungeon = DUNGEONS[p.dungeonId];
+    if (!dungeon) return null;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < INSTANCE_SLOT_COUNT; i++) {
+      const o = instanceOrigin(dungeon.index, i);
+      const d = Math.abs(p.pos.z - o.z);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return instanceOrigin(dungeon.index, best);
+  }
+
+  private tutorialLocalFor(p: Entity): { x: number; z: number; ox: number; oz: number } | null {
+    const o = this.tutorialOriginFor(p);
+    if (!o) return null;
+    return { x: p.pos.x - o.x, z: p.pos.z - o.z, ox: o.x, oz: o.z };
+  }
+
   private nearestHarvestableTree(p: Entity): { key: string; x: number; z: number; d: number } | null {
+    const tut = this.tutorialLocalFor(p);
+    if (tut) {
+      const key = `${TUTORIAL_TREE_KEY}:${Math.round(tut.ox)}:${Math.round(tut.oz)}`;
+      const x = tut.ox + TUTORIAL_TREE.x;
+      const z = tut.oz + TUTORIAL_TREE.z;
+      const d = Math.hypot(p.pos.x - x, p.pos.z - z);
+      if (d <= TREE_CHOP_RANGE && !this.choppedTrees.has(key)) return { key, x, z, d };
+    }
     let best: { key: string; x: number; z: number; d: number } | null = null;
     for (const t of this.harvestableTrees) {
       if (this.choppedTrees.has(t.key)) continue;
@@ -1035,12 +1077,39 @@ export class Sim {
   }
 
   private isFishingWater(x: number, z: number): boolean {
-    if (x > DUNGEON_X_THRESHOLD) return false;
+    if (x > DUNGEON_X_THRESHOLD) {
+      const dungeon = dungeonAt(x);
+      if (dungeon?.id !== 'tutorial_crypt') return false;
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i < INSTANCE_SLOT_COUNT; i++) {
+        const o = instanceOrigin(dungeon.index, i);
+        const d = Math.abs(z - o.z);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      const o = instanceOrigin(dungeon.index, best);
+      return isInTutorialLakeLocal(x - o.x, z - o.z);
+    }
     if (x < WORLD_MIN_X || x > WORLD_MAX_X || z < WORLD_MIN_Z || z > WORLD_MAX_Z) return true;
     return groundHeight(x, z, this.cfg.seed) < WATER_LEVEL - 0.15;
   }
 
+  private nearestTutorialFishingSpot(p: Entity): { x: number; z: number } | null {
+    const tut = this.tutorialLocalFor(p);
+    if (!tut) return null;
+    if (isInTutorialLakeLocal(tut.x, tut.z)) return null;
+    if (distanceToTutorialLakeLocal(tut.x, tut.z) > FISHING_RANGE) return null;
+    const dx = tut.x - TUTORIAL_LAKE.x;
+    const dz = tut.z - TUTORIAL_LAKE.z;
+    const len = Math.hypot(dx, dz) || 1;
+    return {
+      x: tut.ox + TUTORIAL_LAKE.x + (dx / len) * TUTORIAL_LAKE.r,
+      z: tut.oz + TUTORIAL_LAKE.z + (dz / len) * TUTORIAL_LAKE.r,
+    };
+  }
+
   private nearestFishingSpot(p: Entity): { x: number; z: number } | null {
+    const tutorialSpot = this.nearestTutorialFishingSpot(p);
+    if (tutorialSpot) return tutorialSpot;
     if (p.pos.x > DUNGEON_X_THRESHOLD) return null;
     if (groundHeight(p.pos.x, p.pos.z, this.cfg.seed) < WATER_LEVEL - 0.05) return null;
     let best: { x: number; z: number; d: number } | null = null;
@@ -2961,6 +3030,50 @@ export class Sim {
     }
   }
 
+  private countFish(meta: PlayerMeta): number {
+    const fishIds = new Set(FISH_ITEM_IDS);
+    return meta.inventory.reduce((sum, s) => sum + (fishIds.has(s.itemId) ? s.count : 0), 0);
+  }
+
+  private removeFish(count: number, meta: PlayerMeta): void {
+    const fishIds = new Set(FISH_ITEM_IDS);
+    let left = count;
+    for (const slot of [...meta.inventory]) {
+      if (left <= 0) break;
+      if (!fishIds.has(slot.itemId)) continue;
+      const take = Math.min(left, slot.count);
+      this.removeItem(slot.itemId, take, meta.entityId);
+      left -= take;
+    }
+  }
+
+  craftClassWeapon(tier: 'normal' | 'golden', pid?: number): void {
+    const r = this.resolve(pid);
+    if (!r) return;
+    const { meta, e: p } = r;
+    if (p.dead) return;
+    if (p.inCombat) { this.error(meta.entityId, "You can't craft while in combat."); return; }
+    const nearTable = [...this.entities.values()].some((e) =>
+      e.kind === 'object' && e.templateId === CRAFTING_TABLE_TEMPLATE && dist2d(p.pos, e.pos) <= INTERACT_RANGE + 2);
+    if (!nearTable) { this.error(meta.entityId, 'You need to be near a crafting table.'); return; }
+    const cost = tier === 'golden' ? GOLDEN_WEAPON_COST : NORMAL_WEAPON_COST;
+    const itemId = tier === 'golden' ? CLASS_GOLDEN_WEAPON[meta.cls] : CLASS_CRAFT_WEAPON[meta.cls];
+    const def = ITEMS[itemId];
+    if (!def) { this.error(meta.entityId, 'No class weapon recipe found.'); return; }
+    const wood = this.countItem('harvested_wood', meta.entityId);
+    const fish = this.countFish(meta);
+    if (wood < cost.wood || fish < cost.fish) {
+      this.error(meta.entityId, `Need ${cost.wood} Wood and ${cost.fish} fish.`);
+      return;
+    }
+    this.removeItem('harvested_wood', cost.wood, meta.entityId);
+    this.removeFish(cost.fish, meta);
+    this.addItem(itemId, 1, meta.entityId);
+    this.equipItem(itemId, meta.entityId);
+    this.onCraftForQuests(tier, meta);
+    this.emit({ type: 'log', text: `Crafted and equipped ${def.name}.`, color: '#8f8', pid: meta.entityId });
+  }
+
   private placeFarmstead(pid: number): void {
     const r = this.resolve(pid);
     if (!r) return;
@@ -3292,6 +3405,23 @@ export class Sim {
       let changed = false;
       quest.objectives.forEach((obj, i) => {
         if (obj.type === 'chop' && qp.counts[i] < obj.count) {
+          qp.counts[i]++;
+          changed = true;
+          meta.counters.questProgress++;
+          this.emit({ type: 'questProgress', questId: qp.questId, text: `${obj.label}: ${qp.counts[i]}/${obj.count}`, pid: meta.entityId });
+        }
+      });
+      if (changed) this.checkQuestReady(qp, meta);
+    }
+  }
+
+  private onCraftForQuests(tier: 'normal' | 'golden', meta: PlayerMeta): void {
+    for (const qp of meta.questLog.values()) {
+      if (qp.state !== 'active') continue;
+      const quest = QUESTS[qp.questId];
+      let changed = false;
+      quest.objectives.forEach((obj, i) => {
+        if (obj.type === 'craft' && obj.craftTier === tier && qp.counts[i] < obj.count) {
           qp.counts[i]++;
           changed = true;
           meta.counters.questProgress++;

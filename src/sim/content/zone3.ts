@@ -493,6 +493,10 @@ export const ZONE3_CAMPS: CampDef[] = [
 
 export const ZONE3_OBJECTS: GroundObjectDef[] = [
   {
+    itemId: 'crafting_table', templateId: 'crafting_table', name: 'Crafting Table',
+    positions: [{ x: 6, z: 657 }],
+  },
+  {
     itemId: 'highwatch_summons',
     name: 'Highwatch Summons',
     positions: [{ x: 1, z: 654 }, { x: -2, z: 657 }],

@@ -116,6 +116,7 @@ export interface IWorld {
   abandonQuest(questId: string): void;
   equipItem(itemId: string): void;
   useItem(itemId: string): void;
+  craftClassWeapon(tier: 'normal' | 'golden'): void;
   buyItem(npcId: number, itemId: string): void;
   sellItem(itemId: string): void;
   releaseSpirit(): void;

@@ -151,9 +151,8 @@ export const ZONE1_MOBS: Record<string, MobTemplate> = {
 export const ZONE1_NPCS: Record<string, NpcDef> = {
   marshal_redbrook: {
     id: 'marshal_redbrook', name: 'Marshal Redbrook', title: 'Town Marshal',
-    // moved out of the castle-town house footprint and onto the open central
-    // street/plaza so he no longer clips through the imported building mesh.
-    pos: { x: 0, z: 1.5 }, facing: facePoint({ x: 0, z: 1.5 }, EASTBROOK_CAMPFIRE), color: 0xb7950b,
+    // Open central plaza, pulled away from the castle-town house footprints.
+    pos: { x: -16, z: 11 }, facing: facePoint({ x: -16, z: 11 }, EASTBROOK_CAMPFIRE), color: 0xb7950b,
     questIds: ['q_wolves', 'q_greyjaw', 'q_bandits', 'q_ringleader'],
     greeting: 'Keep your blade close, $C. The Vale is not what it was.',
   },
@@ -166,13 +165,13 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
   },
   apothecary_lin: {
     id: 'apothecary_lin', name: 'Apothecary Lin', title: 'Herbalist',
-    pos: { x: 11, z: -3 }, facing: facePoint({ x: 11, z: -3 }, EASTBROOK_CAMPFIRE), color: 0x7d3c98,
+    pos: { x: 8, z: 7 }, facing: facePoint({ x: 8, z: 7 }, EASTBROOK_CAMPFIRE), color: 0x7d3c98,
     questIds: ['q_spiders'],
     greeting: 'Careful where you step in the eastern woods, friend.',
   },
   brother_aldric: {
     id: 'brother_aldric', name: 'Brother Aldric', title: 'Priest of the Vale',
-    pos: { x: -14, z: -10 }, facing: facePoint({ x: -14, z: -10 }, EASTBROOK_CAMPFIRE), color: 0xf7f9f9,
+    pos: { x: -8, z: -2 }, facing: facePoint({ x: -8, z: -2 }, EASTBROOK_CAMPFIRE), color: 0xf7f9f9,
     questIds: [
       'q_bones', 'q_whispers', 'q_names_of_the_dead', 'q_silence_the_call',
       'q_rite', 'q_sexton', 'q_hollow', 'q_gravecallers_trail', 'q_fenbridge_muster',
@@ -184,7 +183,7 @@ export const ZONE1_NPCS: Record<string, NpcDef> = {
     // moved out of the imported castle-town wall/building footprint and onto
     // an open market-street spot near the centre so the vendor remains visible.
     pos: { x: 18, z: -4 }, facing: facePoint({ x: 18, z: -4 }, EASTBROOK_CAMPFIRE), color: 0x707b7c,
-    questIds: [],
+    questIds: ['q_craft_first_weapon', 'q_craft_golden_weapon'],
     vendorItems: [
       'eastbrook_arming_sword', 'bronzework_mace', 'vale_carving_knife', 'hickory_shortstaff',
       'eastbrook_chain_vest', 'valespun_robe', 'tanned_leather_jerkin',
@@ -250,6 +249,23 @@ export const ZONE1_QUESTS: Record<string, QuestDef> = {
     objectives: [{ type: 'chop', count: 10, label: 'Trees chopped' }],
     xpReward: 250, copperReward: 0,
     itemRewards: { warrior: 'farmstead_deed', mage: 'farmstead_deed', rogue: 'farmstead_deed' },
+  },
+  q_craft_first_weapon: {
+    id: 'q_craft_first_weapon', name: 'A Weapon of Your Own',
+    giverNpcId: 'smith_haldren', turnInNpcId: 'smith_haldren',
+    text: 'That old starter weapon will not carry you far. Use the crafting table beside my forge and make a class weapon. The first craft is cheap: 10 Wood and 10 fish.',
+    completionText: 'Good. That one is fitted to your class and your hand. Keep it close.',
+    objectives: [{ type: 'craft', craftTier: 'normal', count: 1, label: 'Class weapon crafted' }],
+    xpReward: 200, copperReward: 50, itemRewards: {},
+  },
+  q_craft_golden_weapon: {
+    id: 'q_craft_golden_weapon', name: 'The Golden Masterwork',
+    giverNpcId: 'smith_haldren', turnInNpcId: 'smith_haldren',
+    text: 'Now for the best weapon I can teach you to make. Bring patience and materials: a golden class weapon costs 200 Wood and 200 fish.',
+    completionText: 'That golden weapon is the best craft in the Vale. No finer edge leaves my forge.',
+    objectives: [{ type: 'craft', craftTier: 'golden', count: 1, label: 'Golden class weapon crafted' }],
+    xpReward: 900, copperReward: 250, itemRewards: {},
+    requiresQuest: 'q_craft_first_weapon',
   },
   q_spiders: {
     id: 'q_spiders', name: 'Webwood Menace',
@@ -392,7 +408,7 @@ export const ZONE1_QUESTS: Record<string, QuestDef> = {
 };
 
 export const ZONE1_QUEST_ORDER = [
-  'q_wolves', 'q_boars', 'q_lumber_for_a_home', 'q_spiders', 'q_greyjaw', 'q_murlocs',
+  'q_wolves', 'q_boars', 'q_lumber_for_a_home', 'q_craft_first_weapon', 'q_craft_golden_weapon', 'q_spiders', 'q_greyjaw', 'q_murlocs',
   'q_supplies', 'q_bandits', 'q_mine', 'q_bones', 'q_ringleader',
   'q_whispers', 'q_names_of_the_dead', 'q_silence_the_call',
   'q_rite', 'q_sexton', 'q_hollow', 'q_gravecallers_trail',
@@ -430,6 +446,10 @@ export const ZONE1_CAMPS: CampDef[] = [
 
 
 export const ZONE1_OBJECTS: GroundObjectDef[] = [
+  {
+    itemId: 'crafting_table', templateId: 'crafting_table', name: 'Crafting Table',
+    positions: [{ x: 7, z: -5 }],
+  },
   {
     itemId: 'supply_crate',
     name: 'Stolen Supply Crate',
@@ -493,5 +513,5 @@ export const ZONE1_PROPS: ZonePropsDef = {
   mudHuts: [[-73, 59], [-78, 54], [-69, 55]],
   ruinRings: [{ x: 80, z: 78, ringR: 7, columns: 7 }],
   fences: [],
-  graveyards: [{ x: -14, z: -14 }],
+  graveyards: [],
 };
