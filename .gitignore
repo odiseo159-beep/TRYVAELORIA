@@ -28,3 +28,5 @@ Thumbs.db
 
 # standalone asset-gallery build output
 dist-gallery
+
+.vercel
