@@ -123,7 +123,7 @@ export class Hud {
     this.refreshKeybindLabels();
     this.buildXpTicks();
     $('#pf-name').textContent = sim.player.name;
-    this.drawPortrait($('#pf-portrait') as unknown as HTMLCanvasElement, CLASS_GLYPH[sim.cfg.playerClass], CLASSES[sim.cfg.playerClass].color);
+    this.drawClassPortrait($('#pf-portrait') as unknown as HTMLCanvasElement, sim.cfg.playerClass, CLASSES[sim.cfg.playerClass].color);
     const mm = $('#minimap') as unknown as HTMLCanvasElement;
     this.minimapCtx = mm.getContext('2d')!;
     this.minimapBg = this.renderTerrainCanvas(140, { minX: WORLD_MIN_X, maxX: WORLD_MAX_X, minZ: WORLD_MIN_Z, maxZ: WORLD_MAX_Z });
@@ -176,6 +176,35 @@ export class Hud {
   // -------------------------------------------------------------------------
   // Portraits, icons, tooltips, money
   // -------------------------------------------------------------------------
+
+  private portraitImgCache = new Map<string, HTMLImageElement>();
+
+  // Player unit-frame portrait: the rendered head of the class's character model
+  // (public/images/hud/portraits/<class>.png) over a class-tinted backdrop, so
+  // the frame shows a head photo instead of the generic class glyph.
+  private drawClassPortrait(canvas: HTMLCanvasElement, className: string, tint: number): void {
+    const ctx = canvas.getContext('2d')!;
+    const s = canvas.width;
+    const bg = (): void => {
+      const g = ctx.createRadialGradient(s * 0.4, s * 0.3, 2, s / 2, s / 2, s * 0.68);
+      const c = '#' + tint.toString(16).padStart(6, '0');
+      g.addColorStop(0, shade(c, 0.42));
+      g.addColorStop(1, shade(c, -0.42));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+    };
+    const paint = (img: HTMLImageElement): void => { bg(); ctx.drawImage(img, 0, 0, s, s); };
+    let img = this.portraitImgCache.get(className);
+    if (img) {
+      if (img.complete && img.naturalWidth) paint(img);
+      else img.addEventListener('load', () => paint(img!), { once: true });
+      return;
+    }
+    img = new Image();
+    this.portraitImgCache.set(className, img);
+    img.addEventListener('load', () => paint(img!), { once: true });
+    img.addEventListener('error', () => bg(), { once: true });
+    img.src = `/images/hud/portraits/${className}.png`;
+  }
 
   private drawPortrait(canvas: HTMLCanvasElement, glyph: string, tint: number): void {
     const ctx = canvas.getContext('2d')!;
