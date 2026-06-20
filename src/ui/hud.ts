@@ -13,6 +13,7 @@ import { Meters } from './meters';
 import { audio } from '../game/audio';
 import { music } from '../game/music';
 import { iconDataUrl, QUALITY_COLOR } from './icons';
+import { CharacterViewer } from './character_viewer';
 import { Keybinds, BIND_ACTIONS, BIND_CATEGORIES, isReservedCode, keyLabel } from '../game/keybinds';
 import { Settings, GameSettings, SETTING_RANGES } from '../game/settings';
 import { chatPlayerContextActions } from './player_context_menu';
@@ -178,6 +179,7 @@ export class Hud {
   // -------------------------------------------------------------------------
 
   private portraitImgCache = new Map<string, HTMLImageElement>();
+  private charViewer: CharacterViewer | null = null;
 
   // Player unit-frame portrait: the rendered head of the class's character model
   // (public/images/hud/portraits/<class>.png) over a class-tinted backdrop, so
@@ -1694,9 +1696,15 @@ export class Hud {
 
   toggleChar(): void {
     const el = $('#char-window');
-    if (el.style.display === 'block') { el.style.display = 'none'; this.hideTooltip(); return; }
+    if (el.style.display === 'block') { this.closeChar(); return; }
+    el.style.display = 'block'; // show first so the 3D canvas has a layout size
     this.renderChar();
-    el.style.display = 'block';
+  }
+
+  private closeChar(): void {
+    if (this.charViewer) { this.charViewer.dispose(); this.charViewer = null; }
+    $('#char-window').style.display = 'none';
+    this.hideTooltip();
   }
 
   renderChar(): void {
@@ -1704,37 +1712,44 @@ export class Hud {
     const sim = this.sim;
     const p = sim.player;
     const cls = CLASSES[sim.cfg.playerClass];
-    let html = `<div class="panel-title"><span>${p.name} <span style="color:#998d6a;font-size:11px">Level ${p.level} ${cls.name}</span></span><span class="x-btn" data-close>✕</span></div>`;
-    html += `<div class="paperdoll"><div class="equip-col" id="equip-col"></div></div>`;
     const wpn = sim.equipment.mainhand ? ITEMS[sim.equipment.mainhand] : null;
     const dps = wpn?.weapon ? ((wpn.weapon.min + wpn.weapon.max) / 2 + (p.attackPower / 14) * wpn.weapon.speed) / wpn.weapon.speed : 0;
-    html += `<div class="char-stats">
-      <span>Strength: <b>${p.stats.str}</b></span><span>Armor: <b>${p.stats.armor}</b></span>
-      <span>Agility: <b>${p.stats.agi}</b></span><span>Attack Power: <b>${p.attackPower}</b></span>
-      <span>Stamina: <b>${p.stats.sta}</b></span><span>Damage/sec: <b>${dps.toFixed(1)}</b></span>
-      <span>Intellect: <b>${p.stats.int}</b></span><span>Crit Chance: <b>${(p.critChance * 100).toFixed(1)}%</b></span>
-      <span>Spirit: <b>${p.stats.spi}</b></span><span>Dodge: <b>${(p.dodgeChance * 100).toFixed(1)}%</b></span>
-    </div>`;
-    el.innerHTML = html;
-    const col = el.querySelector('#equip-col')!;
-    const slots: { key: 'mainhand' | 'chest' | 'legs' | 'feet'; name: string }[] = [
-      { key: 'mainhand', name: 'Main Hand' },
-      { key: 'chest', name: 'Chest' },
-      { key: 'legs', name: 'Legs' },
-      { key: 'feet', name: 'Feet' },
+    const slots: { key: 'mainhand' | 'chest' | 'legs' | 'feet'; name: string; side: 'l' | 'r' }[] = [
+      { key: 'mainhand', name: 'Main Hand', side: 'l' },
+      { key: 'chest', name: 'Chest', side: 'l' },
+      { key: 'legs', name: 'Legs', side: 'r' },
+      { key: 'feet', name: 'Feet', side: 'r' },
     ];
-    for (const slot of slots) {
-      const itemId = sim.equipment[slot.key];
-      const item = itemId ? ITEMS[itemId] : null;
-      const row = document.createElement('div');
-      row.className = 'equip-slot';
-      const qColor = !item ? '#666' : QUALITY_COLOR[item.quality ?? 'common'] ?? '#fff';
-      row.innerHTML = `${item ? this.itemIcon(item) : `<img class="item-icon" style="border-color:#444" src="${iconDataUrl('item', 'slot_empty')}" alt="" draggable="false">`}
-        <div><div class="slot-name">${slot.name}</div><div class="slot-item" style="color:${qColor}">${item ? item.name : 'Empty'}</div></div>`;
-      if (item) this.attachTooltip(row, () => this.itemTooltip(item));
-      col.appendChild(row);
+    const slotBox = (s: typeof slots[number]): string => {
+      const item = sim.equipment[s.key] ? ITEMS[sim.equipment[s.key]!] : null;
+      const q = item ? (QUALITY_COLOR[item.quality ?? 'common'] ?? '#9d9d9d') : '#3a3a44';
+      const ico = iconDataUrl('item', item ? item.id : 'slot_empty');
+      return `<div class="cw-slot${item ? '' : ' empty'}" data-slot="${s.key}" style="--q:${q}" aria-label="${s.name}">
+        <img class="item-icon" src="${ico}" alt="" draggable="false"><span class="cw-slot-tag">${s.name}</span></div>`;
+    };
+    el.innerHTML = `
+      <div class="panel-title"><span>${p.name} <span class="cw-sub">Level ${p.level} ${cls.name}</span></span><span class="x-btn" data-close>✕</span></div>
+      <div class="cw-doll">
+        <div class="cw-col">${slots.filter((s) => s.side === 'l').map(slotBox).join('')}</div>
+        <div class="cw-model"><canvas id="char-3d"></canvas><span class="cw-rotate-hint">drag to rotate</span></div>
+        <div class="cw-col">${slots.filter((s) => s.side === 'r').map(slotBox).join('')}</div>
+      </div>
+      <div class="char-stats">
+        <span>Strength <b>${p.stats.str}</b></span><span>Armor <b>${p.stats.armor}</b></span>
+        <span>Agility <b>${p.stats.agi}</b></span><span>Attack Power <b>${p.attackPower}</b></span>
+        <span>Stamina <b>${p.stats.sta}</b></span><span>Damage/sec <b>${dps.toFixed(1)}</b></span>
+        <span>Intellect <b>${p.stats.int}</b></span><span>Crit <b>${(p.critChance * 100).toFixed(1)}%</b></span>
+        <span>Spirit <b>${p.stats.spi}</b></span><span>Dodge <b>${(p.dodgeChance * 100).toFixed(1)}%</b></span>
+      </div>`;
+    for (const s of slots) {
+      const item = sim.equipment[s.key] ? ITEMS[sim.equipment[s.key]!] : null;
+      const box = el.querySelector(`.cw-slot[data-slot="${s.key}"]`) as HTMLElement | null;
+      if (item && box) this.attachTooltip(box, () => this.itemTooltip(item));
     }
-    el.querySelector('[data-close]')?.addEventListener('click', () => { el.style.display = 'none'; this.hideTooltip(); });
+    if (this.charViewer) { this.charViewer.dispose(); this.charViewer = null; }
+    const canvas = el.querySelector('#char-3d') as HTMLCanvasElement | null;
+    if (canvas) this.charViewer = new CharacterViewer(canvas, sim.cfg.playerClass);
+    el.querySelector('[data-close]')?.addEventListener('click', () => this.closeChar());
   }
 
   // -------------------------------------------------------------------------
