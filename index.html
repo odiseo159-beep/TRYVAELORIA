@@ -886,17 +886,15 @@
     isolation: isolate;
     transition: filter .35s ease, transform .45s ease;
   }
-  .mode-card::before {
-    content: '';
+  .mode-card .mode-video {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     z-index: -3;
-    background-image: var(--mode-bg), var(--mode-bg-dev);
-    background-position: center, center;
-    background-size: cover, cover;
-    background-repeat: no-repeat, no-repeat;
-    transform: scale(1.015);
-    transition: transform .8s ease, filter .45s ease;
+    pointer-events: none;
+    transition: filter .35s ease;
   }
   .mode-card::after {
     content: '';
@@ -910,8 +908,8 @@
   }
   .mode-card.mode-online { --mode-bg: url('/images/mode-select/ONLINEMODE.png'); --mode-bg-dev: url('/public/images/mode-select/ONLINEMODE.png'); --mode-accent: #d75b42; --mode-accent-soft: rgba(215,91,66,.38); }
   .mode-card.mode-offline { --mode-bg: url('/images/mode-select/OFFLINEMODE.png'); --mode-bg-dev: url('/public/images/mode-select/OFFLINEMODE.png'); --mode-accent: #a5a85e; --mode-accent-soft: rgba(165,168,94,.34); }
-  .mode-card:hover::before,
-  .mode-card:focus-visible::before { transform: scale(1.055); filter: brightness(1.08) saturate(1.08); }
+  .mode-card:hover .mode-video,
+  .mode-card:focus-visible .mode-video { filter: brightness(1.07) saturate(1.06); }
   .mode-card:hover::after,
   .mode-card:focus-visible::after {
     background:
@@ -2844,6 +2842,9 @@
       <img class="mode-top-logo" src="/images/vaeloria-logo.png" alt="VAELORIA" />
       <div class="mode-row" aria-label="Choose your game mode">
         <div class="mode-card mode-online" id="btn-online" role="button" tabindex="0" aria-label="Online Mode: server characters, shared realm, blockchain and player market">
+          <video class="mode-video" autoplay muted loop playsinline preload="auto" poster="/images/mode-select/ONLINEMODE.png" aria-hidden="true">
+            <source src="/images/mode-select/ONLINEVIDEO.mp4" type="video/mp4" />
+          </video>
           <div class="mode-content">
             <h2>Online Mode</h2>
             <div class="mode-divider" aria-hidden="true"><span></span></div>
@@ -2857,6 +2858,9 @@
           </div>
         </div>
         <div class="mode-card mode-offline" id="btn-offline" role="button" tabindex="0" aria-label="Offline Mode: local characters only, no blockchain, no online market">
+          <video class="mode-video" autoplay muted loop playsinline preload="auto" poster="/images/mode-select/OFFLINEMODE.png" aria-hidden="true">
+            <source src="/images/mode-select/OFFLINEVIDEO.mp4" type="video/mp4" />
+          </video>
           <div class="mode-content">
             <h2>Offline Mode</h2>
             <div class="mode-divider" aria-hidden="true"><span></span></div>
