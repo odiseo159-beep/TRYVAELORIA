@@ -9,6 +9,7 @@
 // has a proper icon. Results are cached as data URLs.
 
 import { ABILITIES, ITEMS } from '../sim/data';
+import { WOW_ITEM_ICON } from './wow_item_icons';
 
 export type IconKind = 'ability' | 'item' | 'aura';
 
@@ -1447,6 +1448,10 @@ export function iconDataUrl(kind: IconKind, id: string, size: number = DEFAULT_I
   if (kind === 'ability' || kind === 'aura') {
     const wow = WOW_ABILITY_ICON[id];
     if (wow) return `/images/icons/spells/${wow}`;
+  }
+  if (kind === 'item') {
+    const wow = WOW_ITEM_ICON[id];
+    if (wow) return `/images/icons/items/${wow}`;
   }
   const key = `${kind}|${id}|${size}`;
   const cached = urlCache.get(key);
