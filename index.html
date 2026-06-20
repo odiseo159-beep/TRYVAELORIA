@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-<link rel="preload" as="image" href="/loading-screen.jpg" />
+<link rel="preload" as="image" href="/loading-screen.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Cinzel+Decorative:wght@700;900&family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@300..700&display=swap" rel="stylesheet">
@@ -809,7 +809,7 @@
     inset: 0;
     z-index: 150;
     display: none;
-    background: #0a0d14 url('/loading-screen.jpg') center / cover no-repeat;
+    background: #0a0d14 url('/loading-screen.png') center / cover no-repeat;
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
@@ -821,15 +821,9 @@
   #loading-screen.fade { opacity: 0; }
   #loading-screen .ls-logo {
     width: auto;
-    max-width: min(520px, 76vw);
+    max-width: min(440px, 72vw);
     height: auto;
-    padding: 8px 18px;
-    font-family: var(--font-heading);
-    font-size: clamp(46px, 8vw, 88px);
-    letter-spacing: 0.08em;
-    color: #f6d46b;
-    text-shadow: 0 0 24px #000, 3px 3px 0 #1c1208, 7px 7px 12px #000;
-    filter: drop-shadow(0 0 24px #000c) drop-shadow(2px 2px 5px #000);
+    filter: drop-shadow(0 0 26px #000d) drop-shadow(2px 3px 6px #000);
   }
   .ls-progress { display: flex; flex-direction: column; align-items: center; gap: 9px; }
   .ls-bar {
@@ -914,8 +908,8 @@
       linear-gradient(180deg, rgba(0,0,0,.10) 0%, rgba(0,0,0,.15) 44%, rgba(0,0,0,.82) 100%);
     transition: background .35s ease;
   }
-  .mode-card.mode-online { --mode-bg: url('/images/mode-select/online-mode.png'); --mode-bg-dev: url('/public/images/mode-select/online-mode.png'); --mode-accent: #d75b42; --mode-accent-soft: rgba(215,91,66,.38); }
-  .mode-card.mode-offline { --mode-bg: url('/images/mode-select/offline-mode.png'); --mode-bg-dev: url('/public/images/mode-select/offline-mode.png'); --mode-accent: #a5a85e; --mode-accent-soft: rgba(165,168,94,.34); }
+  .mode-card.mode-online { --mode-bg: url('/images/mode-select/ONLINEMODE.png'); --mode-bg-dev: url('/public/images/mode-select/ONLINEMODE.png'); --mode-accent: #d75b42; --mode-accent-soft: rgba(215,91,66,.38); }
+  .mode-card.mode-offline { --mode-bg: url('/images/mode-select/OFFLINEMODE.png'); --mode-bg-dev: url('/public/images/mode-select/OFFLINEMODE.png'); --mode-accent: #a5a85e; --mode-accent-soft: rgba(165,168,94,.34); }
   .mode-card:hover::before,
   .mode-card:focus-visible::before { transform: scale(1.055); filter: brightness(1.08) saturate(1.08); }
   .mode-card:hover::after,
@@ -3123,7 +3117,7 @@
   </main>
 
   <div id="loading-screen">
-    <div class="ls-logo" role="img" aria-label="VAELORIA">VAELORIA</div>
+    <img class="ls-logo" src="/images/vaeloria-logo.png" alt="VAELORIA" />
     <div class="ls-progress">
       <div class="ls-bar"><div id="ls-fill"></div></div>
       <div id="ls-status">Entering the world&hellip;</div>

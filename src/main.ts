@@ -60,6 +60,18 @@ function hideLoadingScreen(): void {
   }, LOADING_FADE_MS);
 }
 
+// Cover a screen transition (into character creation / select, etc.) with the
+// loading screen so switching feels intentional. Two RAFs let the art paint
+// before the heavy panel swap runs; it stays up until the preloaded assets are
+// ready plus a short minimum so it never flashes by.
+function withLoadingScreen(status: string, run: () => void, minMs = 800): void {
+  showLoadingScreen(status);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    run();
+    void assetsReady().then(() => window.setTimeout(hideLoadingScreen, minMs));
+  }));
+}
+
 // The loading screen blocks pointer input but a covered button keeps keyboard
 // focus, so Enter/Space could re-fire it mid-entry. One entry per page load;
 // every failure path recovers via fatalOverlay's reload.
@@ -652,8 +664,10 @@ function selectRealm(entry: import('./net/online').RealmEntry): void {
   api.setRealm(entry.url);
   api.realm = entry.name;
   localStorage.setItem(LAST_REALM_KEY, entry.name);
-  show('#charselect-panel');
-  void refreshCharacters();
+  withLoadingScreen('Entering the realm…', () => {
+    show('#charselect-panel');
+    void refreshCharacters();
+  });
 }
 
 async function refreshCharacters(): Promise<void> {
@@ -1190,24 +1204,26 @@ function wireStartScreens(): void {
   };
 
   const handleOfflineSelect = () => {
-    show('#offline-select');
-    refreshOfflineCharacters();
-    
-    // Select warrior by default and render details
-    const warriorCard = document.querySelector('#offline-select .mini-class[data-class="warrior"]') as HTMLElement | null;
-    if (warriorCard) {
-      document.querySelectorAll('#offline-select .mini-class').forEach((c) => {
-        c.classList.remove('sel');
-        c.setAttribute('aria-pressed', 'false');
-      });
-      warriorCard.classList.add('sel');
-      warriorCard.setAttribute('aria-pressed', 'true');
-      renderClassDetails('offline-class-details', 'warrior');
-      updatePreviewContainer('#offline-select');
-      requestAnimationFrame(() => updatePreviewContainer('#offline-select'));
-      window.setTimeout(() => updatePreviewContainer('#offline-select'), 250);
-      btnStartOffline.removeAttribute('disabled');
-    }
+    withLoadingScreen('Preparing character creation…', () => {
+      show('#offline-select');
+      refreshOfflineCharacters();
+
+      // Select warrior by default and render details
+      const warriorCard = document.querySelector('#offline-select .mini-class[data-class="warrior"]') as HTMLElement | null;
+      if (warriorCard) {
+        document.querySelectorAll('#offline-select .mini-class').forEach((c) => {
+          c.classList.remove('sel');
+          c.setAttribute('aria-pressed', 'false');
+        });
+        warriorCard.classList.add('sel');
+        warriorCard.setAttribute('aria-pressed', 'true');
+        renderClassDetails('offline-class-details', 'warrior');
+        updatePreviewContainer('#offline-select');
+        requestAnimationFrame(() => updatePreviewContainer('#offline-select'));
+        window.setTimeout(() => updatePreviewContainer('#offline-select'), 250);
+        btnStartOffline.removeAttribute('disabled');
+      }
+    });
   };
 
   onlineBtn.addEventListener('click', handleOnlineSelect);

@@ -19,7 +19,7 @@ describe('cacheControlFor', () => {
     expect(cacheControlFor('/models/kaykit/knight.glb')).toBe('no-cache');
     expect(cacheControlFor('/textures/atlas.png')).toBe('no-cache');
     expect(cacheControlFor('/index.html')).toBe('no-cache');
-    expect(cacheControlFor('/loading-screen.jpg')).toBe('no-cache');
+    expect(cacheControlFor('/loading-screen.png')).toBe('no-cache');
   });
 
   it('does not treat nested or partial matches as the hashed assets dir', () => {
