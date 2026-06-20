@@ -1318,8 +1318,136 @@ function resolveRecipe(kind: IconKind, id: string): IconRecipe {
 
 const DEFAULT_ICON_SIZE = 96; // crisp at 46px buttons on 2x displays
 
-// Returns a cached PNG data URL for the icon of the given ability/item/aura id.
+// Real WoW spell-icon artwork (Gethe/wow-ui-textures) overrides the procedural
+// painter for mapped abilities. Filenames keep the repo's exact casing; the
+// returned path works in both CSS url() and <img src>. Unmapped ability ids
+// (and all items) stay fully procedural.
+const WOW_ABILITY_ICON: Record<string, string> = {
+  // warrior
+  heroic_strike: 'Ability_Rogue_Ambush.PNG',
+  battle_shout: 'Ability_Warrior_BattleShout.PNG',
+  charge: 'Ability_Warrior_Charge.PNG',
+  rend: 'Ability_Gouge.PNG',
+  thunder_clap: 'SPELL_NATURE_THUNDERCLAP.PNG',
+  hamstring: 'Ability_ShockWave.PNG',
+  bloodrage: 'Ability_Racial_BloodRage.PNG',
+  overpower: 'Ability_MeleeDamage.PNG',
+  execute: 'INV_Sword_48.PNG',
+  slam: 'Ability_Warrior_DecisiveStrike.PNG',
+  cleave: 'Ability_Warrior_Cleave.PNG',
+  defensive_stance: 'Ability_Warrior_DefensiveStance.PNG',
+  sunder_armor: 'Ability_Warrior_Sunder.PNG',
+  taunt: 'Spell_Nature_Reincarnation.PNG',
+  // mage
+  fireball: 'Spell_Fire_FlameBolt.PNG',
+  frost_armor: 'Spell_Frost_FrostArmor02.PNG',
+  arcane_intellect: 'Spell_Holy_MagicalSentry.PNG',
+  frostbolt: 'Spell_Frost_FrostBolt02.PNG',
+  conjure_water: 'INV_Drink_18.PNG',
+  fire_blast: 'Spell_Fire_Fireball.PNG',
+  arcane_missiles: 'Spell_Nature_StarFall.PNG',
+  polymorph: 'Spell_Nature_Polymorph.PNG',
+  frost_nova: 'Spell_Frost_FreezingBreath.PNG',
+  arcane_explosion: 'Spell_Nature_WispSplode.PNG',
+  scorch: 'Spell_Fire_SoulBurn.PNG',
+  ice_barrier: 'Spell_Ice_Lament.PNG',
+  // rogue
+  sinister_strike: 'Spell_Shadow_RitualOfSacrifice.PNG',
+  eviscerate: 'Ability_Rogue_Eviscerate.PNG',
+  backstab: 'Ability_BackStab.PNG',
+  gouge: 'Ability_Gouge.PNG',
+  evasion: 'Spell_Shadow_ShadowWard.PNG',
+  slice_and_dice: 'Ability_Rogue_SliceDice.PNG',
+  sprint: 'Ability_Rogue_Sprint.PNG',
+  kidney_shot: 'Ability_Rogue_KidneyShot.PNG',
+  ambush: 'Ability_Rogue_Ambush.PNG',
+  stealth: 'Ability_Stealth.PNG',
+  adrenaline_rush: 'Spell_Shadow_ShadowWordDominate.PNG',
+  // paladin
+  seal_of_righteousness: 'Ability_ThunderBolt.PNG',
+  holy_light: 'Spell_Holy_HolyBolt.PNG',
+  devotion_aura: 'SPELL_HOLY_DEVOTIONAURA.PNG',
+  judgement: 'Spell_Holy_RighteousFury.PNG',
+  blessing_of_might: 'Spell_Holy_FistOfJustice.PNG',
+  divine_protection: 'Spell_Holy_DivineProtection.PNG',
+  hammer_of_justice: 'Spell_Holy_SealOfMight.PNG',
+  lay_on_hands: 'Spell_Holy_LayOnHands.PNG',
+  flash_of_light: 'Spell_Holy_FlashHeal.PNG',
+  exorcism: 'Spell_Holy_Excorcism_02.PNG',
+  consecration: 'Spell_Holy_InnerFire.PNG',
+  righteous_fury: 'Spell_Holy_SealOfFury.PNG',
+  // hunter
+  tame_beast: 'Ability_Hunter_BeastTaming.PNG',
+  dismiss_pet: 'Spell_Nature_SpiritWolf.PNG',
+  raptor_strike: 'Ability_MeleeDamage.PNG',
+  aspect_of_the_hawk: 'Spell_Nature_RavenForm.PNG',
+  serpent_sting: 'Ability_Hunter_Quickshot.PNG',
+  arcane_shot: 'Ability_ImpalingBolt.PNG',
+  concussive_shot: 'Spell_Frost_Stun.PNG',
+  mongoose_bite: 'Ability_Hunter_SwiftStrike.PNG',
+  wing_clip: 'Ability_Rogue_Trip.PNG',
+  aspect_of_the_cheetah: 'Ability_Mount_JungleTiger.PNG',
+  aimed_shot: 'INV_Spear_07.PNG',
+  rapid_fire: 'Ability_Hunter_RunningShot.PNG',
+  // priest
+  smite: 'Spell_Holy_HolySmite.PNG',
+  lesser_heal: 'Spell_Holy_Heal.PNG',
+  power_word_fortitude: 'Spell_Holy_WordFortitude.PNG',
+  shadow_word_pain: 'Spell_Shadow_ShadowWordPain.PNG',
+  power_word_shield: 'Spell_Holy_PowerWordShield.PNG',
+  renew: 'Spell_Holy_Renew.PNG',
+  mind_blast: 'Spell_Shadow_UnholyFrenzy.PNG',
+  heal: 'Spell_Holy_Heal.PNG',
+  mind_flay: 'Spell_Shadow_SiphonMana.PNG',
+  flash_heal: 'Spell_Holy_FlashHeal.PNG',
+  // shaman
+  lightning_bolt: 'Spell_Nature_Lightning.PNG',
+  rockbiter_weapon: 'Spell_Nature_RockBiter.PNG',
+  healing_wave: 'Spell_Nature_MagicImmunity.PNG',
+  earth_shock: 'Spell_Nature_EarthShock.PNG',
+  lightning_shield: 'Spell_Nature_LightningShield.PNG',
+  flame_shock: 'Spell_Fire_FlameShock.PNG',
+  frost_shock: 'Spell_Frost_FrostShock.PNG',
+  ghost_wolf: 'Spell_Nature_SpiritWolf.PNG',
+  stormstrike: 'Spell_Nature_StormReach.PNG',
+  // warlock
+  shadow_bolt: 'Spell_Shadow_ShadowBolt.PNG',
+  demon_skin: 'Spell_Shadow_RagingScream.PNG',
+  immolate: 'Spell_Fire_Immolation.PNG',
+  corruption: 'Spell_Shadow_AbominationExplosion.PNG',
+  life_tap: 'Spell_Shadow_BurningSpirit.PNG',
+  curse_of_agony: 'Spell_Shadow_CurseOfSargeras.PNG',
+  drain_life: 'Spell_Shadow_LifeDrain02.PNG',
+  fear: 'Spell_Shadow_Possession.PNG',
+  searing_pain: 'Spell_Fire_SoulBurn.PNG',
+  shadowburn: 'Spell_Shadow_ScourgeBuild.PNG',
+  // druid
+  wrath: 'Spell_Nature_WrathV2.PNG',
+  healing_touch: 'SPELL_NATURE_HEALINGTOUCH.PNG',
+  mark_of_the_wild: 'Spell_Nature_Regeneration.PNG',
+  moonfire: 'Spell_Nature_StarFall.PNG',
+  rejuvenation: 'Spell_Nature_Rejuvenation.PNG',
+  thorns: 'Spell_Nature_Thorns.PNG',
+  entangling_roots: 'Spell_Nature_StrangleVines.PNG',
+  bear_form: 'Ability_Racial_BearForm.PNG',
+  maul: 'Ability_Druid_Maul.PNG',
+  growl: 'Ability_Physical_Taunt.PNG',
+  cat_form: 'Ability_Druid_CatForm.PNG',
+  claw: 'Ability_Druid_Rake.PNG',
+  ferocious_bite: 'Ability_Druid_FerociousBite.PNG',
+  swipe: 'INV_Misc_MonsterClaw_03.PNG',
+  regrowth: 'Spell_Nature_ResistNature.PNG',
+  barkskin: 'Spell_Nature_StoneClawTotem.PNG',
+  starfire: 'Spell_Arcane_StarFire.PNG',
+};
+
+// Returns the icon URL for the given ability/item/aura id — a WoW spell-icon
+// path for mapped abilities, otherwise a cached procedural PNG data URL.
 export function iconDataUrl(kind: IconKind, id: string, size: number = DEFAULT_ICON_SIZE): string {
+  if (kind === 'ability' || kind === 'aura') {
+    const wow = WOW_ABILITY_ICON[id];
+    if (wow) return `/images/icons/spells/${wow}`;
+  }
   const key = `${kind}|${id}|${size}`;
   const cached = urlCache.get(key);
   if (cached) return cached;
